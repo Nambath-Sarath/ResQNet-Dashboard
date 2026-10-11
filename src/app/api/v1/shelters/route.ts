@@ -1,6 +1,7 @@
 import { db } from '@/lib/db'
 import { getCurrentOperator, handleError, requireRole, audit } from '@/lib/auth'
 import { publishEvent } from '@/lib/realtime'
+import { Prisma } from '@prisma/client'
 
 export const dynamic = 'force-dynamic'
 
@@ -34,6 +35,13 @@ export async function GET(req: Request) {
       total: enriched.length,
       total_capacity: shelters.reduce((sum, s) => sum + s.capacity, 0),
       total_occupancy: shelters.reduce((sum, s) => sum + s.occupancy_estimate, 0),
+      freshness: {
+        last_updated_at: shelters.reduce<Date | null>(
+          (latest, shelter) => !latest || shelter.updated_at > latest ? shelter.updated_at : latest,
+          null,
+        )?.toISOString() ?? null,
+        stale: shelters.length === 0,
+      },
     })
   } catch (err) {
     return handleError(err)
@@ -62,18 +70,19 @@ export async function POST(req: Request) {
     }
 
     // upsert by name
-    const existing = await db.shelter.findFirst({ where: { name } })
-    let shelter
-    if (existing) {
-      shelter = await db.shelter.update({
-        where: { id: existing.id },
-        data: { latitude, longitude, capacity, occupancy_estimate, status, updated_by: op.id },
-      })
-    } else {
-      shelter = await db.shelter.create({
-        data: { name, latitude, longitude, capacity, occupancy_estimate, status, updated_by: op.id },
-      })
-    }
+    const shelter = await db.shelter.upsert({
+      where: { name },
+      update: { latitude, longitude, capacity, occupancy_estimate, status, updated_by: op.id },
+      create: { name, latitude, longitude, capacity, occupancy_estimate, status, updated_by: op.id },
+    }).catch((err: unknown) => {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        return db.shelter.update({
+          where: { name },
+          data: { latitude, longitude, capacity, occupancy_estimate, status, updated_by: op.id },
+        })
+      }
+      throw err
+    })
 
     await audit({
       actor_id: op.id,

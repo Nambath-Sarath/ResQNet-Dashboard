@@ -2,6 +2,7 @@ import { db } from '@/lib/db'
 import { getCurrentOperator, handleError, requireRole, audit } from '@/lib/auth'
 import { publishEvent } from '@/lib/realtime'
 import { Prisma } from '@prisma/client'
+import { parseLimit } from '@/lib/query-validation'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,12 +18,20 @@ export async function GET(req: Request) {
     const url = new URL(req.url)
     const status = url.searchParams.get('status')
     const destination = url.searchParams.get('destination')
-    const q = url.searchParams.get('q')?.toLowerCase()
-    const limit = Math.min(200, Number(url.searchParams.get('limit') ?? 100))
+    const q = url.searchParams.get('q')?.trim()
+    const limit = parseLimit(url.searchParams.get('limit'))
 
     const filters: Prisma.MessageWhereInput[] = []
     if (status && VALID_STATUSES.includes(status)) filters.push({ status: status as never })
     if (destination) filters.push({ destination })
+    if (q) {
+      filters.push({
+        OR: [
+          { body: { contains: q } },
+          { destination: { contains: q } },
+        ],
+      })
+    }
     const where: Prisma.MessageWhereInput = filters.length ? { AND: filters } : {}
 
     const messages = await db.message.findMany({
@@ -32,13 +41,8 @@ export async function GET(req: Request) {
       include: { attempts: { orderBy: { attempted_at: 'desc' }, take: 3 } },
     })
 
-    let filtered = messages
-    if (q) {
-      filtered = messages.filter((m) => m.body.toLowerCase().includes(q) || m.destination.toLowerCase().includes(q))
-    }
-
     return Response.json({
-      messages: filtered.map((m) => ({
+      messages: messages.map((m) => ({
         id: m.id,
         source: m.source,
         destination: m.destination,
@@ -53,8 +57,11 @@ export async function GET(req: Request) {
         failure_reason: m.failure_reason,
         attempts: m.attempts,
       })),
-      total: filtered.length,
-      freshness: { last_updated_at: new Date().toISOString(), stale: false },
+      total: messages.length,
+      freshness: {
+        last_updated_at: messages[0]?.created_at?.toISOString() ?? null,
+        stale: messages.length === 0,
+      },
     })
   } catch (err) {
     return handleError(err)

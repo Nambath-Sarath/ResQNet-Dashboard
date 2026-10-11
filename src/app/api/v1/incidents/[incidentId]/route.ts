@@ -106,6 +106,17 @@ export async function PATCH(req: Request, { params }: Params) {
 
     if (body.assigned_to_id !== undefined) {
       const assignee_id = body.assigned_to_id ? String(body.assigned_to_id) : null
+      if (assignee_id) {
+        const assignee = await db.operator.findFirst({
+          where: {
+            id: assignee_id,
+            active: true,
+            role: { in: ['DISPATCHER', 'FIELD_COORDINATOR', 'NODE_TECHNICIAN', 'ADMINISTRATOR'] },
+          },
+          select: { id: true },
+        })
+        if (!assignee) throw new ValidationError('assigned_to_id must identify an active operational operator.')
+      }
       updates.assigned_to_id = assignee_id
       updates.assigned_at = assignee_id ? new Date() : null
       if (assignee_id && incident.status === 'ACKNOWLEDGED') {

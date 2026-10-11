@@ -33,7 +33,13 @@ export async function GET(req: Request) {
       resources: enriched,
       total: enriched.length,
       low_stock_count: enriched.filter((r) => r.low_stock).length,
-      freshness: { last_updated_at: new Date().toISOString(), stale: false },
+      freshness: {
+        last_updated_at: resources.reduce<Date | null>(
+          (latest, resource) => !latest || resource.updated_at > latest ? resource.updated_at : latest,
+          null,
+        )?.toISOString() ?? null,
+        stale: resources.length === 0,
+      },
     })
   } catch (err) {
     return handleError(err)
@@ -48,7 +54,7 @@ export async function POST(req: Request) {
     const resource_type = String(body?.resource_type ?? '').trim().toUpperCase()
     const unit = String(body?.unit ?? '').trim()
     const quantity = body?.quantity != null ? Number(body.quantity) : null
-    const location_label = body?.location_label ? String(body.location_label) : null
+    const location_label = body?.location_label ? String(body.location_label).trim() : ''
     const location_lat = body?.location_lat != null ? Number(body.location_lat) : null
     const location_lon = body?.location_lon != null ? Number(body.location_lon) : null
 
@@ -59,36 +65,26 @@ export async function POST(req: Request) {
       return Response.json({ error: { code: 'VALIDATION_ERROR', message: 'quantity cannot be negative.' } }, { status: 400 })
     }
 
-    // upsert by resource_type + location_label
-    const existing = await db.resource.findFirst({
-      where: { resource_type, location_label: location_label ?? null },
+    const resource = await db.resource.upsert({
+      where: { resource_type_location_label: { resource_type, location_label } },
+      update: { quantity, unit, location_lat, location_lon, updated_by_id: op.id },
+      create: {
+        resource_type,
+        unit,
+        quantity,
+        location_label,
+        location_lat,
+        location_lon,
+        updated_by_id: op.id,
+      },
     })
-    let resource
-    if (existing) {
-      resource = await db.resource.update({
-        where: { id: existing.id },
-        data: { quantity, unit, updated_by_id: op.id },
-      })
-    } else {
-      resource = await db.resource.create({
-        data: {
-          resource_type,
-          unit,
-          quantity,
-          location_label,
-          location_lat,
-          location_lon,
-          updated_by_id: op.id,
-        },
-      })
-    }
 
     await audit({
       actor_id: op.id,
       action: 'resource.update',
       entity_type: 'resource',
       entity_id: resource.id,
-      metadata: { resource_type, quantity, delta: existing ? quantity - existing.quantity : quantity },
+      metadata: { resource_type, quantity },
     })
     await publishEvent({
       event_type: 'resource.updated',

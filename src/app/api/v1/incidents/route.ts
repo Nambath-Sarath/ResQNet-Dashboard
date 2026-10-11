@@ -2,6 +2,7 @@ import { db } from '@/lib/db'
 import { getCurrentOperator, handleError, requireRole, audit } from '@/lib/auth'
 import { Prisma } from '@prisma/client'
 import { publishEvent } from '@/lib/realtime'
+import { parseLimit } from '@/lib/query-validation'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,14 +23,22 @@ export async function GET(req: Request) {
     const category = url.searchParams.get('category')
     const assigned_to_id = url.searchParams.get('assigned_to_id')
     const since = url.searchParams.get('since')
-    const q = url.searchParams.get('q')?.toLowerCase()
-    const limit = Math.min(200, Number(url.searchParams.get('limit') ?? 100))
+    const q = url.searchParams.get('q')?.trim()
+    const limit = parseLimit(url.searchParams.get('limit'))
 
     const filters: Prisma.IncidentWhereInput[] = []
     if (status && STATUS_VALUES.includes(status as never)) filters.push({ status: status as never })
     if (priority && PRIORITY_VALUES.includes(priority as never)) filters.push({ priority: priority as never })
     if (category && CATEGORY_VALUES.includes(category as never)) filters.push({ category: category as never })
     if (assigned_to_id) filters.push({ assigned_to_id })
+    if (q) {
+      filters.push({
+        OR: [
+          { id: { contains: q } },
+          { description: { contains: q } },
+        ],
+      })
+    }
     if (since) {
       const d = new Date(since)
       if (!Number.isNaN(d.getTime())) filters.push({ created_at: { gte: d } })
@@ -47,15 +56,8 @@ export async function GET(req: Request) {
       take: limit,
     })
 
-    let filtered = incidents
-    if (q) {
-      filtered = incidents.filter(
-        (i) => i.id.toLowerCase().includes(q) || i.description.toLowerCase().includes(q),
-      )
-    }
-
     return Response.json({
-      incidents: filtered.map((i) => ({
+      incidents: incidents.map((i) => ({
         id: i.id,
         category: i.category,
         priority: i.priority,
@@ -77,8 +79,11 @@ export async function GET(req: Request) {
         assigned_to: i.assignee,
         latest_event: i.events[0] ?? null,
       })),
-      total: filtered.length,
-      freshness: { last_updated_at: new Date().toISOString(), stale: false },
+      total: incidents.length,
+      freshness: {
+        last_updated_at: incidents[0]?.updated_at?.toISOString() ?? null,
+        stale: incidents.length === 0,
+      },
     })
   } catch (err) {
     return handleError(err)

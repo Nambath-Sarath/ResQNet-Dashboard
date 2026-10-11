@@ -1,6 +1,7 @@
 import { db } from '@/lib/db'
 import { handleError, NotFoundError, ValidationError } from '@/lib/auth'
 import { publishEvent } from '@/lib/realtime'
+import { finiteNumber } from '@/lib/query-validation'
 
 export const dynamic = 'force-dynamic'
 
@@ -40,12 +41,12 @@ export async function POST(req: Request, { params }: Params) {
     if (Number.isNaN(node_reported_at.getTime())) {
       throw new ValidationError('Invalid node_reported_at.')
     }
-    const battery = body?.battery != null ? Number(body.battery) : null
-    const supply_voltage = body?.supply_voltage != null ? Number(body.supply_voltage) : null
-    const link_quality = body?.link_quality != null ? Number(body.link_quality) : null
-    const uptime_seconds = body?.uptime_seconds != null ? Number(body.uptime_seconds) : null
-    const connected_clients = body?.connected_clients != null ? Number(body.connected_clients) : null
-    const rssi = body?.rssi != null ? Number(body.rssi) : null
+    const battery = body?.battery != null ? finiteNumber(body.battery, 'battery', { min: 0, max: 100 }) : null
+    const supply_voltage = body?.supply_voltage != null ? finiteNumber(body.supply_voltage, 'supply_voltage', { min: 0, max: 100 }) : null
+    const link_quality = body?.link_quality != null ? finiteNumber(body.link_quality, 'link_quality', { min: 0, max: 100 }) : null
+    const uptime_seconds = body?.uptime_seconds != null ? finiteNumber(body.uptime_seconds, 'uptime_seconds', { min: 0 }) : null
+    const connected_clients = body?.connected_clients != null ? finiteNumber(body.connected_clients, 'connected_clients', { min: 0, integer: true }) : null
+    const rssi = body?.rssi != null ? finiteNumber(body.rssi, 'rssi', { min: -150, max: 0 }) : null
 
     // Determine health state
     let health_state = 'OK'
@@ -54,30 +55,36 @@ export async function POST(req: Request, { params }: Params) {
 
     // Check for displacement if a location is included
     let displacementAlert = false
-    if (body?.location && node.deployment_lat != null && node.deployment_lon != null) {
-      const lat = Number(body.location.latitude)
-      const lon = Number(body.location.longitude)
-      if (!Number.isNaN(lat) && !Number.isNaN(lon)) {
+    if (body?.location) {
+      const lat = finiteNumber(body.location.latitude, 'location.latitude', { min: -90, max: 90 })
+      const lon = finiteNumber(body.location.longitude, 'location.longitude', { min: -180, max: 180 })
+      const accuracy = body.location.accuracy_m != null
+        ? finiteNumber(body.location.accuracy_m, 'location.accuracy_m', { min: 0 })
+        : null
+      const capturedAt = body.location.captured_at ? new Date(body.location.captured_at) : node_reported_at
+      if (Number.isNaN(capturedAt.getTime())) {
+        throw new ValidationError('Invalid location.captured_at.')
+      }
+      if (node.deployment_lat != null && node.deployment_lon != null) {
         const dist = haversine(node.deployment_lat, node.deployment_lon, lat, lon)
         // Conservative: only alert if distance > 200m AND accuracy < 30m.
         // A single noisy reading does not establish movement (spec §12.4).
-        const accuracy = body.location.accuracy_m != null ? Number(body.location.accuracy_m) : null
         if (dist > 0.2 && (accuracy == null || accuracy < 30)) {
           displacementAlert = true
         }
         // store the location reading
-        await db.nodeLocation.create({
-          data: {
-            node_id: nodeId,
-            latitude: lat,
-            longitude: lon,
-            accuracy_m: accuracy ?? null,
-            source: body.location.source ?? 'GPS_MODULE',
-            captured_at: body.location.captured_at ? new Date(body.location.captured_at) : node_reported_at,
-            valid: !displacementAlert,
-          },
-        })
       }
+      await db.nodeLocation.create({
+        data: {
+          node_id: nodeId,
+          latitude: lat,
+          longitude: lon,
+          accuracy_m: accuracy ?? null,
+          source: body.location.source ?? 'GPS_MODULE',
+          captured_at: capturedAt,
+          valid: !displacementAlert,
+        },
+      })
     }
 
     const hb = await db.nodeHeartbeat.create({

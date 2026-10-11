@@ -1,9 +1,9 @@
 import { db } from '@/lib/db'
 import { getCurrentOperator, handleError, requireRole, audit } from '@/lib/auth'
 import { publishEvent } from '@/lib/realtime'
-import { writeFile, readFile, mkdir } from 'fs/promises'
+import { writeFile, readFile, mkdir, rename, stat } from 'fs/promises'
 import { existsSync } from 'fs'
-import { join, resolve, isAbsolute } from 'path'
+import { join } from 'path'
 import { tmpdir } from 'os'
 import { backupPathForId as safeBackupPathForId } from '@/lib/backup-utils'
 
@@ -15,11 +15,22 @@ function backupPathForId(id: string): string | null {
   return safeBackupPathForId(BACKUP_DIR, id)
 }
 
-function databasePath(): string {
-  const configured = process.env.DATABASE_URL?.replace(/^file:/, '')
-  if (!configured) return resolve(process.cwd(), 'db', 'custom.db')
-  if (isAbsolute(configured)) return configured
-  return resolve(process.cwd(), 'prisma', configured)
+function sqlString(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`
+}
+
+async function verifySqliteBackup(path: string): Promise<boolean> {
+  return db.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe(`ATTACH DATABASE ${sqlString(path)} AS backup_check`)
+    try {
+      const result = await tx.$queryRawUnsafe<Array<{ integrity_check: string }>>(
+        'PRAGMA backup_check.integrity_check',
+      )
+      return result[0]?.integrity_check === 'ok'
+    } finally {
+      await tx.$executeRawUnsafe('DETACH DATABASE backup_check')
+    }
+  })
 }
 
 /**
@@ -92,10 +103,13 @@ export async function POST(req: Request) {
       if (!existsSync(backupPath)) {
         return Response.json({ error: { code: 'NOT_FOUND', message: 'Backup file not found.' } }, { status: 404 })
       }
-      // Verify readability
+      // Verify readability and SQLite integrity.
       const buf = await readFile(backupPath)
       if (buf.length === 0) {
         return Response.json({ error: { code: 'CORRUPT', message: 'Backup file is empty.' } }, { status: 500 })
+      }
+      if (!await verifySqliteBackup(backupPath)) {
+        return Response.json({ error: { code: 'CORRUPT', message: 'SQLite integrity check failed.' } }, { status: 500 })
       }
       // Record the test-restore event
       await db.systemEvent.create({
@@ -134,18 +148,22 @@ export async function POST(req: Request) {
     const ts = new Date().toISOString().replace(/[:.]/g, '-')
     const backupName = `resqnet-${ts}.db`
     const backupPath = join(BACKUP_DIR, backupName)
-    const dbPath = databasePath()
+    const temporaryPath = `${backupPath}.tmp`
 
-    // Read current DB and write a copy
-    const dbBuf = await readFile(dbPath)
-    await writeFile(backupPath, dbBuf)
+    // VACUUM INTO creates a transaction-consistent SQLite backup.
+    await db.$executeRawUnsafe(`VACUUM INTO ${sqlString(temporaryPath)}`)
+    await rename(temporaryPath, backupPath)
+    if (!await verifySqliteBackup(backupPath)) {
+      return Response.json({ error: { code: 'CORRUPT', message: 'SQLite integrity check failed.' } }, { status: 500 })
+    }
+    const backupSize = (await stat(backupPath)).size
 
     // Record the backup event
     const event = await db.systemEvent.create({
       data: {
         event_type: 'backup.success',
         severity: 'info',
-        payload: JSON.stringify({ destination: BACKUP_DIR, size: dbBuf.length, name: backupName }),
+        payload: JSON.stringify({ destination: BACKUP_DIR, size: backupSize, name: backupName }),
         occurred_at: new Date(),
       },
     })
@@ -155,18 +173,18 @@ export async function POST(req: Request) {
       action: 'backup.create',
       entity_type: 'backup',
       entity_id: backupName.replace(/\.db$/, ''),
-      metadata: { size: dbBuf.length, destination: BACKUP_DIR },
+      metadata: { size: backupSize, destination: BACKUP_DIR },
     })
     await publishEvent({
       event_type: 'system.health_changed',
       entity_id: backupName.replace(/\.db$/, ''),
-      data: { kind: 'backup.success', size: dbBuf.length, destination: BACKUP_DIR },
+      data: { kind: 'backup.success', size: backupSize, destination: BACKUP_DIR },
     })
 
     return Response.json({
       backup_id: backupName.replace(/\.db$/, ''),
       name: backupName,
-      size_bytes: dbBuf.length,
+      size_bytes: backupSize,
       destination: BACKUP_DIR,
       created_at: new Date().toISOString(),
       event_id: event.id,

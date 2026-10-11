@@ -361,7 +361,7 @@ model Resource {
   unit             String   // litres | kg | kits | units
   quantity         Float
   reserved_quantity Float    @default(0)
-  location_label   String?
+  location_label   String   @default("")
   location_lat     Float?
   location_lon     Float?
   updated_at       DateTime @default(now())
@@ -372,6 +372,7 @@ model Resource {
   requests ResourceRequest[]
 
   @@index([resource_type])
+  @@unique([resource_type, location_label])
 }
 
 model ResourceRequest {
@@ -403,6 +404,7 @@ model Shelter {
   updated_by        String?
 
   @@index([status])
+  @@unique([name])
 }
 
 // ---------------------------------------------------------------------------

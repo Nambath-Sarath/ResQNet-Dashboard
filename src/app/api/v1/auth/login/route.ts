@@ -13,15 +13,18 @@ export async function POST(req: Request) {
       return errorResponse('Username and password are required.', 'VALIDATION_ERROR', 400)
     }
 
-    const sourceIp = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
-      req.headers.get('x-real-ip') ??
-      'unknown'
+    const sourceIp = process.env.TRUST_PROXY === 'true'
+      ? req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
+        req.headers.get('x-real-ip') ??
+        'unknown'
+      : 'unknown'
     const windowStart = new Date(Date.now() - 60_000)
     const recent = await db.loginAttempt.count({
       where: {
         username,
-        source_ip: sourceIp,
+        succeeded: false,
         created_at: { gt: windowStart },
+        ...(sourceIp === 'unknown' ? {} : { source_ip: sourceIp }),
       },
     })
     if (recent >= 5) {
@@ -47,6 +50,9 @@ export async function POST(req: Request) {
       action: 'auth.login',
       entity_type: 'operator',
       entity_id: result.user.id,
+    })
+    await db.loginAttempt.deleteMany({
+      where: { created_at: { lt: new Date(Date.now() - 24 * 60 * 60_000) } },
     })
 
     const res = Response.json({
