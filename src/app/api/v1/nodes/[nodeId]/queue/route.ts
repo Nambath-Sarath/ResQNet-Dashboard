@@ -1,5 +1,5 @@
 import { db } from '@/lib/db'
-import { getCurrentOperator, handleError, NotFoundError, requireOperator, audit } from '@/lib/auth'
+import { getCurrentOperator, handleError, NotFoundError, requireRole, audit } from '@/lib/auth'
 import { publishEvent } from '@/lib/realtime'
 
 export const dynamic = 'force-dynamic'
@@ -72,7 +72,7 @@ export async function GET(_req: Request, { params }: Params) {
  */
 export async function POST(req: Request, { params }: Params) {
   try {
-    const op = await requireOperator()
+    const op = await requireRole('NODE_TECHNICIAN', 'DISPATCHER', 'ADMINISTRATOR')
     const { nodeId } = await params
     const node = await db.node.findUnique({ where: { id: nodeId } })
     if (!node) throw new NotFoundError()
@@ -115,29 +115,11 @@ export async function POST(req: Request, { params }: Params) {
     let forwarded = 0
     let duplicates = 0
     for (const msg of queued) {
-      // Idempotency check: if a message with the same source+body+created_at
-      // window already exists as FORWARDED, skip it (duplicate)
-      const existing = await db.message.findFirst({
-        where: {
-          AND: [
-            { id: { not: msg.id } },
-            { source: msg.source },
-            { body: msg.body },
-            { destination: msg.destination },
-            { status: 'FORWARDED' },
-          ],
-        },
-      })
-      if (existing) {
-        duplicates++
-        await db.message.update({ where: { id: msg.id }, data: { status: 'EXPIRED' } })
-        continue
-      }
-      await db.message.update({
-        where: { id: msg.id },
+      const claimed = await db.message.updateMany({
+        where: { id: msg.id, status: { in: ['QUEUED_FOR_NODE', 'ACCEPTED_BY_GATEWAY'] } },
         data: { status: 'FORWARDED', forwarded_at: new Date() },
       })
-      forwarded++
+      if (claimed.count === 1) forwarded++
     }
 
     await audit({

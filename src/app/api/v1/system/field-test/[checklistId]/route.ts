@@ -1,5 +1,5 @@
 import { db } from '@/lib/db'
-import { handleError, requireOperator, audit } from '@/lib/auth'
+import { handleError, requireRole, audit } from '@/lib/auth'
 import { publishEvent } from '@/lib/realtime'
 
 export const dynamic = 'force-dynamic'
@@ -13,7 +13,7 @@ type Params = { params: Promise<{ checklistId: string }> }
  */
 export async function PATCH(req: Request, { params }: Params) {
   try {
-    const op = await requireOperator()
+    const op = await requireRole('FIELD_COORDINATOR', 'NODE_TECHNICIAN', 'DISPATCHER', 'ADMINISTRATOR')
     const { checklistId } = await params
     const body = await req.json().catch(() => ({}))
     const status = String(body?.status ?? 'pending')

@@ -1,5 +1,5 @@
 import { db } from '@/lib/db'
-import { requireOperator, handleError, audit, NotFoundError } from '@/lib/auth'
+import { requireRole, handleError, audit, NotFoundError } from '@/lib/auth'
 import { publishEvent } from '@/lib/realtime'
 
 export const dynamic = 'force-dynamic'
@@ -9,7 +9,7 @@ type Params = { params: Promise<{ incidentId: string }> }
 /** POST /api/v1/incidents/{incident_id}/notes — add a timestamped note. */
 export async function POST(req: Request, { params }: Params) {
   try {
-    const op = await requireOperator()
+    const op = await requireRole('DISPATCHER', 'FIELD_COORDINATOR', 'ADMINISTRATOR')
     const { incidentId } = await params
     const body = await req.json().catch(() => ({}))
     const noteText = String(body?.body ?? '').trim()

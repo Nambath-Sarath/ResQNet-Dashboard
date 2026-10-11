@@ -3,11 +3,27 @@ import { getCurrentOperator, handleError, requireRole, audit } from '@/lib/auth'
 import { publishEvent } from '@/lib/realtime'
 import { writeFile, readFile, mkdir } from 'fs/promises'
 import { existsSync } from 'fs'
-import { join } from 'path'
+import { join, resolve, relative, isAbsolute } from 'path'
+import { tmpdir } from 'os'
 
 export const dynamic = 'force-dynamic'
 
-const BACKUP_DIR = '/tmp/resqnet-backups'
+const BACKUP_DIR = join(tmpdir(), 'resqnet-backups')
+
+function backupPathForId(id: string): string | null {
+  if (!/^[A-Za-z0-9_-]+$/.test(id)) return null
+  const directory = resolve(BACKUP_DIR)
+  const candidate = resolve(directory, `${id}.db`)
+  const rel = relative(directory, candidate)
+  return rel && !rel.startsWith('..') && !isAbsolute(rel) ? candidate : null
+}
+
+function databasePath(): string {
+  const configured = process.env.DATABASE_URL?.replace(/^file:/, '')
+  if (!configured) return resolve(process.cwd(), 'db', 'custom.db')
+  if (isAbsolute(configured)) return configured
+  return resolve(process.cwd(), 'prisma', configured)
+}
 
 /**
  * GET /api/v1/system/backup — list available backups + last backup info.
@@ -72,7 +88,10 @@ export async function POST(req: Request) {
     if (testRestore && backupId) {
       // Test-restore workflow: verify the backup file exists + can be read,
       // and that records can be queried from a copy.
-      const backupPath = join(BACKUP_DIR, `${backupId}.db`)
+      const backupPath = backupPathForId(backupId)
+      if (!backupPath) {
+        return Response.json({ error: { code: 'VALIDATION_ERROR', message: 'Invalid backup id.' } }, { status: 400 })
+      }
       if (!existsSync(backupPath)) {
         return Response.json({ error: { code: 'NOT_FOUND', message: 'Backup file not found.' } }, { status: 404 })
       }
@@ -118,7 +137,7 @@ export async function POST(req: Request) {
     const ts = new Date().toISOString().replace(/[:.]/g, '-')
     const backupName = `resqnet-${ts}.db`
     const backupPath = join(BACKUP_DIR, backupName)
-    const dbPath = process.env.DATABASE_URL?.replace('file:', '') ?? '/home/z/my-project/db/custom.db'
+    const dbPath = databasePath()
 
     // Read current DB and write a copy
     const dbBuf = await readFile(dbPath)
@@ -169,7 +188,10 @@ export async function DELETE(req: Request) {
     if (!id) {
       return Response.json({ error: { code: 'VALIDATION_ERROR', message: 'id query param required.' } }, { status: 400 })
     }
-    const backupPath = join(BACKUP_DIR, `${id}.db`)
+    const backupPath = backupPathForId(id)
+    if (!backupPath) {
+      return Response.json({ error: { code: 'VALIDATION_ERROR', message: 'Invalid backup id.' } }, { status: 400 })
+    }
     if (!existsSync(backupPath)) {
       return Response.json({ error: { code: 'NOT_FOUND', message: 'Backup not found.' } }, { status: 404 })
     }

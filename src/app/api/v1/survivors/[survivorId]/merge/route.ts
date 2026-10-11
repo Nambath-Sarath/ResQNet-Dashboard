@@ -2,7 +2,7 @@ import { db } from '@/lib/db'
 import {
   getCurrentOperator,
   handleError,
-  requireOperator,
+  requireRole,
   audit,
   NotFoundError,
   ValidationError,
@@ -31,7 +31,7 @@ type Params = { params: Promise<{ survivorId: string }> }
  */
 export async function POST(req: Request, { params }: Params) {
   try {
-    const op = await requireOperator()
+    const op = await requireRole('FIELD_COORDINATOR', 'DISPATCHER', 'ADMINISTRATOR')
     const { survivorId } = await params
     const body = await req.json().catch(() => ({}))
     const duplicateId = String(body?.duplicate_id ?? '').trim()
@@ -56,15 +56,6 @@ export async function POST(req: Request, { params }: Params) {
     }
 
     // 1. Mark the duplicate as closed + link via notes
-    const updatedDuplicate = await db.survivor.update({
-      where: { id: duplicateId },
-      data: {
-        status: 'closed',
-        notes: `Merged into ${canonical.temporary_ref}${note ? ': ' + note : ''}`,
-      },
-    })
-
-    // 2. Append to canonical's notes
     const mergeNote = [
       canonical.notes ?? '',
       `[Merged ${duplicate.temporary_ref} on ${new Date().toISOString()}]`,
@@ -72,10 +63,13 @@ export async function POST(req: Request, { params }: Params) {
       duplicate.notes ? `Original notes from ${duplicate.temporary_ref}: ${duplicate.notes}` : '',
     ].filter(Boolean).join('\n')
 
-    const updatedCanonical = await db.survivor.update({
-      where: { id: survivorId },
-      data: { notes: mergeNote },
-    })
+    await db.$transaction([
+      db.survivor.update({
+        where: { id: duplicateId },
+        data: { status: 'closed', notes: `Merged into ${canonical.temporary_ref}${note ? ': ' + note : ''}` },
+      }),
+      db.survivor.update({ where: { id: survivorId }, data: { notes: mergeNote } }),
+    ])
 
     // 3. Audit + realtime
     await audit({

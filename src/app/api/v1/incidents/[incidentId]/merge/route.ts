@@ -2,7 +2,7 @@ import { db } from '@/lib/db'
 import {
   getCurrentOperator,
   handleError,
-  requireOperator,
+  requireRole,
   audit,
   NotFoundError,
   ValidationError,
@@ -30,7 +30,7 @@ type Params = { params: Promise<{ incidentId: string }> }
  */
 export async function POST(req: Request, { params }: Params) {
   try {
-    const op = await requireOperator()
+    const op = await requireRole('DISPATCHER', 'FIELD_COORDINATOR', 'ADMINISTRATOR')
     const { incidentId } = await params
     const body = await req.json().catch(() => ({}))
     const duplicateId = String(body?.duplicate_id ?? '').trim()
@@ -58,64 +58,48 @@ export async function POST(req: Request, { params }: Params) {
     }
 
     // 1. Mark the duplicate as DUPLICATE + link to canonical
-    const updatedDuplicate = await db.incident.update({
-      where: { id: duplicateId },
-      data: {
-        status: 'DUPLICATE',
-        related_incident_id: incidentId,
-        resolved_at: new Date(),
-      },
-    })
-
-    // 2. Add a merge event to the duplicate
-    await db.incidentEvent.create({
-      data: {
-        incident_id: duplicateId,
-        event_type: 'merged',
-        old_value: duplicate.status,
-        new_value: 'DUPLICATE',
-        actor_type: 'operator',
-        actor_id: op.id,
-        note: `Merged into ${incidentId}${note ? ': ' + note : ''}`,
-        created_at: new Date(),
-      },
-    })
-
-    // 3. Add a merge event to the canonical
-    await db.incidentEvent.create({
-      data: {
-        incident_id: incidentId,
-        event_type: 'duplicate_merged',
-        old_value: null,
-        new_value: duplicateId,
-        actor_type: 'operator',
-        actor_id: op.id,
-        note: `${duplicateId} merged into this incident${note ? ': ' + note : ''}`,
-        created_at: new Date(),
-      },
-    })
-
-    // 4. Copy notes from the duplicate to the canonical (with attribution)
-    if (duplicate.notes.length > 0) {
-      await db.incidentNote.createMany({
-        data: duplicate.notes.map((n) => ({
-          incident_id: incidentId,
-          body: `[Merged from ${duplicateId}] ${n.body}`,
-          author_id: n.author_id,
-        })),
+    await db.$transaction(async (tx) => {
+      await tx.incident.update({
+        where: { id: duplicateId },
+        data: { status: 'DUPLICATE', related_incident_id: incidentId, resolved_at: new Date() },
       })
-    }
-
-    // 5. Add a note to the canonical if provided
-    if (note) {
-      await db.incidentNote.create({
-        data: {
-          incident_id: incidentId,
-          body: `Merge note: ${note}`,
-          author_id: op.id,
-        },
+      await tx.incidentEvent.createMany({
+        data: [
+          {
+            incident_id: duplicateId,
+            event_type: 'merged',
+            old_value: duplicate.status,
+            new_value: 'DUPLICATE',
+            actor_type: 'operator',
+            actor_id: op.id,
+            note: `Merged into ${incidentId}${note ? ': ' + note : ''}`,
+          },
+          {
+            incident_id: incidentId,
+            event_type: 'duplicate_merged',
+            old_value: null,
+            new_value: duplicateId,
+            actor_type: 'operator',
+            actor_id: op.id,
+            note: `${duplicateId} merged into this incident${note ? ': ' + note : ''}`,
+          },
+        ],
       })
-    }
+      if (duplicate.notes.length > 0) {
+        await tx.incidentNote.createMany({
+          data: duplicate.notes.map((n) => ({
+            incident_id: incidentId,
+            body: `[Merged from ${duplicateId}] ${n.body}`,
+            author_id: n.author_id,
+          })),
+        })
+      }
+      if (note) {
+        await tx.incidentNote.create({
+          data: { incident_id: incidentId, body: `Merge note: ${note}`, author_id: op.id },
+        })
+      }
+    })
 
     // 6. Audit + realtime
     await audit({

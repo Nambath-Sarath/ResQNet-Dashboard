@@ -13,15 +13,18 @@ export async function POST(req: Request) {
       return errorResponse('Username and password are required.', 'VALIDATION_ERROR', 400)
     }
 
-    // naive rate-limit per username (60s window, 5 attempts)
-    const recent = await db.operatorSession.findMany({
+    const sourceIp = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
+      req.headers.get('x-real-ip') ??
+      'unknown'
+    const windowStart = new Date(Date.now() - 60_000)
+    const recent = await db.loginAttempt.count({
       where: {
-        operator: { username },
-        created_at: { gt: new Date(Date.now() - 60_000) },
+        username,
+        source_ip: sourceIp,
+        created_at: { gt: windowStart },
       },
-      select: { id: true },
     })
-    if (recent.length >= 5) {
+    if (recent >= 5) {
       return errorResponse(
         'Too many login attempts. Please wait a minute.',
         'RATE_LIMITED',
@@ -30,6 +33,9 @@ export async function POST(req: Request) {
     }
 
     const result = await login(username, password)
+    await db.loginAttempt.create({
+      data: { username, source_ip: sourceIp, succeeded: result !== null },
+    })
     if (!result) {
       return errorResponse('Invalid credentials.', 'INVALID_CREDENTIALS', 401)
     }

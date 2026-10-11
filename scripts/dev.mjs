@@ -1,17 +1,18 @@
 import { spawn } from 'node:child_process'
 import { access } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const projectDir = fileURLToPath(new URL('..', import.meta.url))
 const nextCommand = join(projectDir, 'node_modules', 'next', 'dist', 'bin', 'next')
 const tsxCommand = join(projectDir, 'node_modules', 'tsx', 'dist', 'cli.mjs')
+const databaseUrl = `file:${resolve(projectDir, 'db', 'custom.db').replaceAll('\\', '/')}`
 const children = []
 
 function start(command, args, cwd = projectDir) {
   const child = spawn(command, args, {
     cwd,
-    env: { ...process.env, DATABASE_URL: process.env.DATABASE_URL ?? 'file:./db/custom.db' },
+    env: { ...process.env, DATABASE_URL: databaseUrl },
     stdio: 'inherit',
   })
   children.push(child)

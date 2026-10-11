@@ -2,7 +2,7 @@ import { db } from '@/lib/db'
 import {
   getCurrentOperator,
   handleError,
-  requireOperator,
+  requireRole,
   audit,
   NotFoundError,
   ValidationError,
@@ -50,7 +50,7 @@ export async function GET(_req: Request, { params }: Params) {
 /** PATCH /api/v1/incidents/{incident_id} — update status/priority/assignment. */
 export async function PATCH(req: Request, { params }: Params) {
   try {
-    const op = await requireOperator()
+    const op = await requireRole('DISPATCHER', 'FIELD_COORDINATOR', 'ADMINISTRATOR')
     const { incidentId } = await params
     const body = await req.json().catch(() => ({}))
 

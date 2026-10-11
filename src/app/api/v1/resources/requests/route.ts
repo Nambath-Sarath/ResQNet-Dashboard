@@ -1,5 +1,5 @@
 import { db } from '@/lib/db'
-import { getCurrentOperator, handleError, requireOperator, audit } from '@/lib/auth'
+import { getCurrentOperator, handleError, requireRole, audit } from '@/lib/auth'
 
 export const dynamic = 'force-dynamic'
 
@@ -32,7 +32,7 @@ export async function GET(req: Request) {
 /** POST /api/v1/resources/requests — submit a resource request. */
 export async function POST(req: Request) {
   try {
-    const op = await requireOperator()
+    const op = await requireRole('FIELD_COORDINATOR', 'DISPATCHER', 'ADMINISTRATOR')
     const body = await req.json().catch(() => ({}))
     const resource_type = String(body?.resource_type ?? '').trim().toUpperCase()
     const unit = String(body?.unit ?? '').trim()
@@ -40,7 +40,7 @@ export async function POST(req: Request) {
     const notes = body?.notes ? String(body.notes) : null
     const requested_by = op.display_name
 
-    if (!resource_type || !unit || quantity == null || Number.isNaN(quantity)) {
+    if (!resource_type || !unit || quantity == null || !Number.isFinite(quantity)) {
       return Response.json({ error: { code: 'VALIDATION_ERROR', message: 'resource_type, unit, quantity required.' } }, { status: 400 })
     }
     if (quantity <= 0) {

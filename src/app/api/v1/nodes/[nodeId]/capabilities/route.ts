@@ -1,5 +1,5 @@
 import { db } from '@/lib/db'
-import { handleError, NotFoundError } from '@/lib/auth'
+import { handleError, NotFoundError, requireOperator } from '@/lib/auth'
 import { publishEvent } from '@/lib/realtime'
 
 export const dynamic = 'force-dynamic'
@@ -30,6 +30,7 @@ const ALLOWED_MODULE_STATUS = new Set([
  */
 export async function GET(_req: Request, { params }: Params) {
   try {
+    await requireOperator()
     const { nodeId } = await params
     const report = await db.capabilityReport.findFirst({
       where: { node_id: nodeId },

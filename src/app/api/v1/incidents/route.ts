@@ -1,5 +1,6 @@
 import { db } from '@/lib/db'
-import { getCurrentOperator, handleError, requireOperator, audit } from '@/lib/auth'
+import { getCurrentOperator, handleError, requireRole, audit } from '@/lib/auth'
+import { Prisma } from '@prisma/client'
 import { publishEvent } from '@/lib/realtime'
 
 export const dynamic = 'force-dynamic'
@@ -87,7 +88,7 @@ export async function GET(req: Request) {
 /** POST /api/v1/incidents — create an incident from an authorized source. */
 export async function POST(req: Request) {
   try {
-    const op = await requireOperator()
+    const op = await requireRole('DISPATCHER', 'FIELD_COORDINATOR', 'ADMINISTRATOR')
     const body = await req.json().catch(() => null)
 
     const category = String(body?.category ?? '').toUpperCase()
@@ -128,12 +129,13 @@ export async function POST(req: Request) {
     }
 
     // generate SOS-NNNN id
-    const count = await db.incident.count()
-    const incident_id = `SOS-${1000 + count + 1}`
+    const incident_id = `SOS-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`
 
     const location = body?.location ?? null
-    const incident = await db.incident.create({
-      data: {
+    let incident
+    try {
+      incident = await db.incident.create({
+        data: {
         id: incident_id,
         client_submission_id,
         category: category as never,
@@ -156,9 +158,25 @@ export async function POST(req: Request) {
             new_value: 'NEW',
             note: `Created by ${op.display_name}`,
           },
+          },
         },
-      },
-    })
+      })
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002' &&
+          source_node_id && client_submission_id) {
+        const existing = await db.incident.findFirst({ where: { source_node_id, client_submission_id } })
+        if (existing) {
+          return Response.json({
+            incident_id: existing.id,
+            status: existing.status,
+            created_at: existing.created_at,
+            accepted_by_gateway: true,
+            duplicate: true,
+          })
+        }
+      }
+      throw err
+    }
 
     await audit({
       actor_id: op.id,

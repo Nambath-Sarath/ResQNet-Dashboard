@@ -42,7 +42,12 @@ function publish(env: EventEnvelope) {
   if (eventBuffer.length > MAX_BUFFER) {
     eventBuffer.splice(0, eventBuffer.length - MAX_BUFFER)
   }
-  io.emit('event', env)
+  for (const socket of io.sockets.sockets.values()) {
+    const state = clientState.get(socket)
+    if (!state || state.subscribed.size === 0 || state.subscribed.has(env.event_type.toLowerCase())) {
+      socket.emit('event', env)
+    }
+  }
   console.log(
     `[event] ${env.event_type} entity=${env.entity_id ?? '-'} → ${io.engine.clientsCount} client(s)`,
   )

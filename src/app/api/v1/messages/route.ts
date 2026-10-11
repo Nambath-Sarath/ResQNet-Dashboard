@@ -1,5 +1,5 @@
 import { db } from '@/lib/db'
-import { getCurrentOperator, handleError, requireOperator, audit } from '@/lib/auth'
+import { getCurrentOperator, handleError, requireRole, audit } from '@/lib/auth'
 import { publishEvent } from '@/lib/realtime'
 
 export const dynamic = 'force-dynamic'
@@ -63,12 +63,12 @@ export async function GET(req: Request) {
 /** POST /api/v1/messages — create a message/broadcast. */
 export async function POST(req: Request) {
   try {
-    const op = await requireOperator()
+    const op = await requireRole('DISPATCHER', 'FIELD_COORDINATOR', 'ADMINISTRATOR')
     const body = await req.json().catch(() => ({}))
     const destination = String(body?.destination ?? '').trim()
     const message_type = String(body?.message_type ?? 'text')
     const text = String(body?.body ?? '').trim()
-    const ttl_seconds = body?.ttl_seconds ? Number(body.ttl_seconds) : 24 * 3600
+    const ttl_seconds = body?.ttl_seconds != null ? Number(body.ttl_seconds) : 24 * 3600
 
     if (!destination) {
       return Response.json({ error: { code: 'VALIDATION_ERROR', message: 'destination is required.' } }, { status: 400 })
@@ -79,11 +79,14 @@ export async function POST(req: Request) {
     if (text.length > 4096) {
       return Response.json({ error: { code: 'VALIDATION_ERROR', message: 'body too large (max 4096 chars).' } }, { status: 400 })
     }
+    if (!Number.isFinite(ttl_seconds) || ttl_seconds < 60 || ttl_seconds > 7 * 86400) {
+      return Response.json({ error: { code: 'VALIDATION_ERROR', message: 'ttl_seconds must be between 60 and 604800.' } }, { status: 400 })
+    }
 
     const isBroadcast = destination === 'broadcast'
     const expires_at = new Date(Date.now() + ttl_seconds * 1000)
 
-    const message = await db.message.create({
+    let message = await db.message.create({
       data: {
         source: op.id,
         destination,
@@ -99,7 +102,7 @@ export async function POST(req: Request) {
     if (!isBroadcast) {
       const node = await db.node.findUnique({ where: { id: destination } })
       if (node) {
-        await db.message.update({
+        message = await db.message.update({
           where: { id: message.id },
           data: { status: 'QUEUED_FOR_NODE' },
         })

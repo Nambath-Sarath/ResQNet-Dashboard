@@ -1,5 +1,5 @@
 import { db } from '@/lib/db'
-import { getCurrentOperator, handleError, requireOperator, audit } from '@/lib/auth'
+import { getCurrentOperator, handleError, requireRole, audit } from '@/lib/auth'
 import { publishEvent } from '@/lib/realtime'
 
 export const dynamic = 'force-dynamic'
@@ -43,7 +43,7 @@ export async function GET(req: Request) {
 /** POST /api/v1/shelters — create or update a shelter. */
 export async function POST(req: Request) {
   try {
-    const op = await requireOperator()
+    const op = await requireRole('FIELD_COORDINATOR', 'DISPATCHER', 'ADMINISTRATOR')
     const body = await req.json().catch(() => ({}))
     const name = String(body?.name ?? '').trim()
     const latitude = body?.latitude != null ? Number(body.latitude) : null
@@ -52,15 +52,17 @@ export async function POST(req: Request) {
     const occupancy_estimate = body?.occupancy_estimate != null ? Number(body.occupancy_estimate) : 0
     const status = String(body?.status ?? 'OPEN')
 
-    if (!name || latitude == null || longitude == null || capacity == null) {
+    if (!name || latitude == null || longitude == null || capacity == null ||
+        !Number.isFinite(latitude) || !Number.isFinite(longitude) ||
+        !Number.isFinite(capacity) || !Number.isFinite(occupancy_estimate)) {
       return Response.json({ error: { code: 'VALIDATION_ERROR', message: 'name, latitude, longitude, capacity required.' } }, { status: 400 })
     }
-    if (occupancy_estimate > capacity) {
+    if (capacity <= 0 || occupancy_estimate < 0 || occupancy_estimate > capacity) {
       return Response.json({ error: { code: 'VALIDATION_ERROR', message: 'occupancy cannot exceed capacity.' } }, { status: 400 })
     }
 
     // upsert by name
-    const existing = await db.shelter.findUnique({ where: { name } })
+    const existing = await db.shelter.findFirst({ where: { name } })
     let shelter
     if (existing) {
       shelter = await db.shelter.update({

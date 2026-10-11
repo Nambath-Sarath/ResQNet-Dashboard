@@ -2,7 +2,7 @@ import { db } from '@/lib/db'
 import {
   getCurrentOperator,
   handleError,
-  requireOperator,
+  requireRole,
   audit,
   ValidationError,
 } from '@/lib/auth'
@@ -32,7 +32,7 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
  */
 export async function POST(req: Request) {
   try {
-    const op = await requireOperator()
+    const op = await requireRole('DISPATCHER', 'FIELD_COORDINATOR', 'ADMINISTRATOR')
     const body = await req.json().catch(() => ({}))
     const action = String(body?.action ?? '').toLowerCase() as BatchAction
     const incident_ids: string[] = Array.isArray(body?.incident_ids) ? body.incident_ids : []

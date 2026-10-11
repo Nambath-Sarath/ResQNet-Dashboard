@@ -6,6 +6,12 @@ import type { Operator, OperatorRole } from '@prisma/client'
 
 export const SESSION_COOKIE = 'resqnet_session'
 const SESSION_TTL_MS = 1000 * 60 * 60 * 12 // 12 hours
+export const WRITE_ROLES: OperatorRole[] = [
+  'DISPATCHER',
+  'FIELD_COORDINATOR',
+  'NODE_TECHNICIAN',
+  'ADMINISTRATOR',
+]
 
 export type SessionUser = {
   id: string

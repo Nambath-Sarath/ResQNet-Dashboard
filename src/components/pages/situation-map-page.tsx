@@ -75,7 +75,7 @@ export function SituationMapPage() {
             kind: 'node',
             label: n.display_name,
             tone: state.tone,
-            popup: `<strong>${n.display_name}</strong> (${n.id})<br/>Deployment reference<br/>${formatCoord(n.deployment_lat, n.deployment_lon)}<br/>${state.label} · battery ${n.battery != null ? Math.round(n.battery) + '%' : '—'}`,
+            popup: `${n.display_name} (${n.id})\nDeployment reference\n${formatCoord(n.deployment_lat, n.deployment_lon)}\n${state.label} · battery ${n.battery != null ? Math.round(n.battery) + '%' : '—'}`,
           })
         }
         // Live GPS marker (circle), only if different from deployment
@@ -91,7 +91,7 @@ export function SituationMapPage() {
               kind: 'node_live',
               label: `${n.display_name} (live)`,
               tone: n.online ? 'success' : 'muted',
-              popup: `<strong>${n.display_name}</strong> live GPS<br/>${formatCoord(n.live_lat, n.live_lon)}<br/>captured ${timeAgo(n.live_captured_at)}`,
+              popup: `${n.display_name} live GPS\n${formatCoord(n.live_lat, n.live_lon)}\ncaptured ${timeAgo(n.live_captured_at)}`,
             })
           }
         }
@@ -107,7 +107,7 @@ export function SituationMapPage() {
           kind: 'incident',
           label: inc.id,
           tone: pri.tone,
-          popup: `<strong>${inc.id}</strong> · ${titleCase(inc.category)} · ${pri.label}<br/>${inc.description.slice(0, 100)}<br/>${inc.people_affected ?? 0} affected · ${timeAgo(inc.created_at)}`,
+          popup: `${inc.id} · ${titleCase(inc.category)} · ${pri.label}\n${inc.description.slice(0, 100)}\n${inc.people_affected ?? 0} affected · ${timeAgo(inc.created_at)}`,
         })
       }
     }
@@ -120,7 +120,7 @@ export function SituationMapPage() {
           kind: 'survivor',
           label: s.temporary_ref,
           tone: s.status === 'missing' ? 'danger' : 'info',
-          popup: `<strong>${s.temporary_ref}</strong><br/>${titleCase(s.status)}<br/>last seen ${timeAgo(s.last_seen_at)}`,
+          popup: `${s.temporary_ref}\n${titleCase(s.status)}\nlast seen ${timeAgo(s.last_seen_at)}`,
         })
       }
     }
@@ -134,7 +134,7 @@ export function SituationMapPage() {
           kind: 'shelter',
           label: sh.name,
           tone: pct >= 100 ? 'danger' : pct >= 80 ? 'warning' : 'success',
-          popup: `<strong>${sh.name}</strong><br/>${sh.occupancy_estimate}/${sh.capacity} (${pct}%)<br/>${titleCase(sh.status)}`,
+          popup: `${sh.name}\n${sh.occupancy_estimate}/${sh.capacity} (${pct}%)\n${titleCase(sh.status)}`,
         })
       }
     }
@@ -324,9 +324,11 @@ export function SituationMapPage() {
               </SheetHeader>
               <div className="px-4 pb-6">
                 <div
-                  className="prose prose-sm max-w-none"
-                  dangerouslySetInnerHTML={{ __html: selected.popup ?? '' }}
-                />
+                  className="whitespace-pre-wrap text-sm"
+                  aria-label="Selected marker details"
+                >
+                  {selected.popup ?? ''}
+                </div>
                 <Button
                   variant="outline"
                   size="sm"

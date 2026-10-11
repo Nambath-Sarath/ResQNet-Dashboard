@@ -57,6 +57,16 @@ model OperatorSession {
   @@index([expires_at])
 }
 
+model LoginAttempt {
+  id         String   @id @default(cuid())
+  username   String
+  source_ip  String
+  succeeded  Boolean  @default(false)
+  created_at DateTime @default(now())
+
+  @@index([username, source_ip, created_at])
+}
+
 // ---------------------------------------------------------------------------
 // Nodes & capabilities
 // ---------------------------------------------------------------------------
