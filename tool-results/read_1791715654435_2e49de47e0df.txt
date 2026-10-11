@@ -1,0 +1,1092 @@
+     1→# ResQNet — Command Dashboard Web App Specification
+     2→
+     3→**Document type:** Product, UX, architecture, and implementation specification  
+     4→**Project:** ResQNet — Local-First Disaster Response and Resource Coordination Platform  
+     5→**Target host:** Raspberry Pi gateway/control center  
+     6→**Status:** Proposed design for implementation; not a claim that these features already exist  
+     7→
+     8→---
+     9→
+    10→## 1. Purpose
+    11→
+    12→The ResQNet Command Dashboard is the operator-facing web application used to monitor rescue nodes, review SOS reports, coordinate response work, inspect optional hardware modules, and manage local disaster-response information when internet access is unavailable.
+    13→
+    14→The dashboard is one client of the ResQNet backend. It is not the backend, database, or radio network itself.
+    15→
+    16→### 1.1 Core operating principle
+    17→
+    18→**Survivor Portal and Command Dashboard do not send data directly to each other.** Each client communicates with backend services. The backend validates requests, writes the authoritative records to the database, and distributes updates to authorized dashboard clients.
+    19→
+    20→- The **Survivor Portal** submits SOS reports, location information, messages, and resource requests.
+    21→- An **ESP32 node** provides nearby Wi-Fi access and forwards information over the configured node-to-gateway transport. If the gateway is unreachable, supported messages may be queued locally and forwarded later.
+    22→- The **Raspberry Pi** runs the API, database, event service, map service, and Command Dashboard hosting.
+    23→- The **Command Dashboard** retrieves records, shows live and last-known state, and sends operator actions back to the API.
+    24→
+    25→### 1.2 Goals
+    26→
+    27→1. Give operators one place to inspect the response situation and identify work requiring attention.
+    28→2. Receive and track SOS and other incident reports.
+    29→3. Register and monitor ESP32 nodes, their health, deployment locations, and capabilities.
+    30→4. Render node-specific module controls from validated capability reports instead of assuming all nodes have the same hardware.
+    31→5. Make stale data, disconnected nodes, and failed communication obvious.
+    32→6. Keep essential operations local and useful without internet access.
+    33→7. Maintain an auditable history of incident changes and sensitive operator actions.
+    34→8. Provide stable APIs so the Survivor Portal, nodes, and dashboard can evolve independently.
+    35→
+    36→### 1.3 Non-goals for the first release
+    37→
+    38→The first release should not claim to provide:
+    39→
+    40→- Guaranteed communication through rubble, water, or arbitrary distances.
+    41→- Precise survivor positioning based on the connected node's coverage area or Wi-Fi signal strength.
+    42→- General-purpose Wi-Fi repeating through a chain of single-radio ESP32 boards without a tested network design.
+    43→- Automatic identification of arbitrary hardware modules without an implemented discovery protocol.
+    44→- Fully autonomous rescue decisions or clinically reliable medical triage.
+    45→- Cloud dependence for core local operations.
+    46→- A production-grade, multi-region mission-control platform.
+    47→
+    48→These limitations should be reflected in the UI, documentation, and test plan.
+    49→
+    50→---
+    51→
+    52→## 2. Proposed technology stack
+    53→
+    54→Use a stack that is easy to develop, test, and run locally on a Raspberry Pi.
+    55→
+    56→| Layer | Proposed technology | Responsibility |
+    57→|---|---|---|
+    58→| Command Dashboard | React + TypeScript + Vite | Operator UI, navigation, client-side state, forms, filters |
+    59→| Styling | Tailwind CSS or CSS modules | Consistent responsive design and component styling |
+    60→| Routing | React Router | Page navigation and nested detail pages |
+    61→| Server-state cache | TanStack Query or a small typed API/state layer | Fetching, caching, retries, invalidation |
+    62→| Maps | Leaflet | Map interaction, markers, layers |
+    63→| Offline map data | Preloaded local tile package or another legally suitable offline map source | Maps without internet |
+    64→| API | Python + FastAPI | Authentication, validation, business rules, persistence, API and WebSocket events |
+    65→| Database | SQLite initially | Authoritative local records on the Pi |
+    66→| ORM/migrations | SQLAlchemy + Alembic, or equivalent migration tooling | Database access and schema evolution |
+    67→| Realtime updates | FastAPI WebSockets; REST fallback | New incidents, node health, messages, and status changes |
+    68→| Node firmware | ESP-IDF preferred; Arduino acceptable for a fast prototype | Node operation and hardware interfaces |
+    69→| Deployment | systemd services; reverse proxy only if needed | Reliable boot, restart, and local service management |
+    70→| Version control | Git | Code history, branches, reviews, releases |
+    71→
+    72→### 2.1 Frontend choice
+    73→
+    74→React is appropriate for the Pi-hosted dashboard because it contains several related, data-heavy pages, reusable tables and filters, live status indicators, maps, and dynamic module panels. Keep the ESP32 Survivor Portal much lighter; a small HTML/CSS/JavaScript page is generally a better fit for ESP32 memory and flash limits.
+    75→
+    76→### 2.2 Dependency policy
+    77→
+    78→Do not hard-code assumed “latest” library versions into this specification. At project setup, choose supported versions, pin dependencies in the lockfiles, record the Node/Python versions, and test the chosen set on the actual Pi. Avoid upgrading dependencies during an emergency deployment without regression testing.
+    79→
+    80→### 2.3 Suggested repository layout
+    81→
+    82→A monorepo is convenient for a student/team project because API contracts, firmware descriptors, and UI code can be versioned together.
+    83→
+    84→```text
+    85→resqnet/
+    86→├── apps/
+    87→│   ├── command-dashboard/             # React + TypeScript + Vite
+    88→│   │   ├── src/
+    89→│   │   │   ├── app/                   # App entry, router, providers
+    90→│   │   │   ├── layouts/               # Dashboard and authentication layouts
+    91→│   │   │   ├── pages/                 # Route-level page components
+    92→│   │   │   ├── features/               # incidents, nodes, modules, resources
+    93→│   │   │   ├── components/             # shared UI components
+    94→│   │   │   ├── services/               # REST client, WebSocket client
+    95→│   │   │   ├── hooks/                  # shared React hooks
+    96→│   │   │   ├── types/                  # generated or hand-maintained API types
+    97→│   │   │   └── utils/                  # formatting, validation helpers
+    98→│   │   ├── public/
+    99→│   │   ├── package.json
+   100→│   │   ├── vite.config.ts
+   101→│   │   └── tsconfig.json
+   102→│   └── survivor-portal/               # separate, lightweight portal if developed here
+   103→├── services/
+   104→│   └── api/
+   105→│       ├── app/
+   106→│       │   ├── main.py
+   107→│       │   ├── api/                   # routers and request/response schemas
+   108→│       │   ├── auth/
+   109→│       │   ├── models/                # ORM/database models
+   110→│       │   ├── services/              # business rules
+   111→│       │   ├── repositories/           # database access
+   112→│       │   ├── events/                # WebSocket/event broker
+   113→│       │   ├── node_protocol/         # node authentication and descriptors
+   114→│       │   └── config.py
+   115→│       ├── migrations/
+   116→│       ├── tests/
+   117→│       ├── pyproject.toml
+   118→│       └── requirements.lock          # or equivalent lockfile
+   119→├── firmware/
+   120→│   └── esp32-node/
+   121→├── contracts/
+   122→│   ├── openapi/                       # exported API schema if needed
+   123→│   ├── capability-descriptor.schema.json
+   124→│   └── event-envelope.schema.json
+   125→├── docs/
+   126→├── deployment/
+   127→│   ├── systemd/
+   128→│   └── scripts/
+   129→└── README.md
+   130→```
+   131→
+   132→The directories are a suggested organization, not a requirement to implement every folder immediately. Start with the smallest structure that stays understandable.
+   133→
+   134→---
+   135→
+   136→## 3. System architecture
+   137→
+   138→### 3.1 High-level flow
+   139→
+   140→```text
+   141→                       LOCAL RESPONSE NETWORK
+   142→
+   143→ Survivor phone                                      Operator browser
+   144→      |                                                     |
+   145→      v                                                     v
+   146→ Survivor Portal                                     Command Dashboard
+   147→      |                                                     |
+   148→      | HTTP/API through a reachable local path             | REST + WebSocket
+   149→      v                                                     v
+   150→+----------------------+                       +--------------------------+
+   151→| ESP32 rescue node(s) | <--- node transport -->| Raspberry Pi gateway     |
+   152→| - local Wi-Fi access |                       | - FastAPI API            |
+   153→| - optional modules   |                       | - incident/business logic|
+   154→| - limited local queue|                       | - WebSocket event service|
+   155→+----------------------+                       | - SQLite database        |
+   156→                                               | - offline map assets     |
+   157→                                               | - built dashboard assets |
+   158→                                               +--------------------------+
+   159→```
+   160→
+   161→The diagram is conceptual. It does not define a working radio topology by itself. The node-to-Pi transport must be selected, implemented, and tested independently.
+   162→
+   163→### 3.2 The database is not connected directly to the web pages
+   164→
+   165→The recommended data flow is:
+   166→
+   167→1. A client sends a request to the API.
+   168→2. The API validates the identity, schema, and permissions.
+   169→3. The API applies business rules and stores the change in SQLite.
+   170→4. After the transaction succeeds, the API publishes an event to connected authorized dashboard clients.
+   171→5. The dashboard updates its view or refetches the authoritative record.
+   172→
+   173→Do not expose the SQLite file to browser JavaScript. Do not place database credentials in the frontend bundle.
+   174→
+   175→### 3.3 Where to host the dashboard
+   176→
+   177→Recommended initial deployment: build the React app into static assets and serve those assets from the Pi, using FastAPI static-file support or a small local web server/reverse proxy. Keep the API under a stable path such as `/api` and WebSockets under `/api/ws`. This makes the dashboard and API share the same origin and reduces CORS complexity.
+   178→
+   179→A separate web server is also acceptable, but its routing, origin, authentication, and offline behavior must be configured deliberately.
+   180→
+   181→### 3.4 Survivor Portal access is a separate networking problem
+   182→
+   183→Serving the Survivor Portal from an ESP32 does not automatically give it access to the Pi API. If the page and API are hosted at different addresses, browser origin rules, CORS, routing, and secure-context restrictions must be addressed and tested on actual Android and iOS devices.
+   184→
+   185→Browser geolocation generally requires a secure context. A plain HTTP page served by a local IP address may not be allowed to use the Geolocation API. Do not promise browser-based GPS sharing until the chosen portal delivery method has been tested. Possible alternatives involve a carefully configured HTTPS approach, a native app, or a different location-reporting workflow. Each has trade-offs, especially offline.
+   186→
+   187→### 3.5 Node-to-gateway transport must be explicit
+   188→
+   189→Choose and document one transport for the initial prototype:
+   190→
+   191→- **Wi-Fi/IP:** suitable when a node can join a local IP network and reach the Pi API.
+   192→- **ESP-NOW:** useful for compact vendor-specific peer messages, but it is not a standard IP bridge. A gateway service must translate messages into application records.
+   193→- **LoRa:** suitable for small, low-bandwidth payloads over a suitable radio link; not for normal web traffic, large images, or general IP bridging without extra infrastructure.
+   194→
+   195→Do not call an ESP32 chain a reliable internet mesh or Wi-Fi repeater unless that exact topology has been implemented and measured. Document range, obstacles, data rates, retry behavior, queue limits, and expected failure modes.
+   196→
+   197→---
+   198→
+   199→## 4. User roles and permissions
+   200→
+   201→Implement role-based authorization on the backend. Hiding a button in the frontend is not an authorization check.
+   202→
+   203→| Role | Typical permissions |
+   204→|---|---|
+   205→| Viewer | Read overview, maps, node state, and approved reports |
+   206→| Dispatcher | Review incidents, acknowledge, assign, update status, send approved messages |
+   207→| Field coordinator | Update assigned team/task status, submit field notes, view relevant resources |
+   208→| Node technician | Register nodes, inspect diagnostics, manage deployment references and modules |
+   209→| Administrator | Manage operators, configuration, backups, and all permitted operational functions |
+   210→
+   211→A small demonstration may begin with administrator and operator roles, but keep the permission checks centralized so the model can grow.
+   212→
+   213→### 4.1 Authentication requirements
+   214→
+   215→- Local authentication must work without an external identity provider.
+   216→- Store password hashes using a modern password-hashing library; never store plaintext passwords.
+   217→- Use secure session cookies or another carefully designed token strategy.
+   218→- Apply session expiration and logout.
+   219→- Protect state-changing requests against CSRF when cookie-based authentication is used.
+   220→- Rate-limit login attempts and externally reachable submission endpoints.
+   221→- Require stronger confirmation for destructive or high-impact actions.
+   222→- Record operator ID, time, action, and affected record in the audit log.
+   223→
+   224→### 4.2 Node identity is separate from operator identity
+   225→
+   226→A node should not authenticate merely by claiming a `node_id` in JSON. Provision a per-node secret, key, or another authenticated identity mechanism suitable for the chosen transport. Keep node credentials separate from operator sessions. If a radio transport cannot provide adequate security by itself, add message authentication, replay protection, and sequence/timestamp validation at the application layer.
+   227→
+   228→---
+   229→
+   230→## 5. Navigation and route hierarchy
+   231→
+   232→Use a persistent sidebar on desktop, a compact navigation drawer on smaller screens, and a top bar that always exposes connection state and operator identity.
+   233→
+   234→Suggested routes:
+   235→
+   236→```text
+   237→/login
+   238→/
+   239→/map
+   240→/incidents
+   241→/incidents/:incidentId
+   242→/survivors
+   243→/survivors/:survivorId
+   244→/nodes
+   245→/nodes/register
+   246→/nodes/:nodeId
+   247→/nodes/:nodeId/location
+   248→/nodes/:nodeId/modules
+   249→/nodes/:nodeId/events
+   250→/modules
+   251→/messages
+   252→/resources
+   253→/shelters
+   254→/reports
+   255→/audit
+   256→/settings
+   257→/settings/operators
+   258→/settings/network
+   259→/settings/alerts
+   260→```
+   261→
+   262→You may consolidate or rename routes during implementation, but preserve clear separation between list views, details, and configuration.
+   263→
+   264→### Global shell
+   265→
+   266→- Product label and current mission/incident context, if configured.
+   267→- Gateway connection status, API status, and last successful synchronization time.
+   268→- User menu and logout.
+   269→- A visible stale-data banner when the client cannot verify current state.
+   270→- A compact alert indicator linking to unresolved high-priority incidents.
+   271→- A responsive left navigation.
+   272→
+   273→Do not make color the sole way to communicate severity or state. Pair colors with text labels and/or icons.
+   274→
+   275→---
+   276→
+   277→## 6. Page-by-page functional specification
+   278→
+   279→## 6.1 Overview
+   280→
+   281→**Purpose:** Tell an operator what needs attention immediately.
+   282→
+   283→### Components
+   284→
+   285→1. **Network summary cards:** total nodes, online nodes, offline nodes, warning/fault nodes.
+   286→2. **Incident summary:** new SOS, unacknowledged SOS, incidents in progress, resolved incidents for a selected interval.
+   287→3. **Map preview:** recent reports and nodes, with a link to the full map.
+   288→4. **Priority queue:** incidents sorted by explicitly defined operational priority and age.
+   289→5. **Node health list:** last heartbeat, battery if available, last-known status, and warnings.
+   290→6. **Recent activity:** incident events, node connection events, module faults, and operator actions.
+   291→7. **Gateway health:** API/database status, storage capacity, last backup, and clock/synchronization health if available.
+   292→
+   293→### Behavior
+   294→
+   295→- Cards must be clickable where a useful filtered destination exists.
+   296→- Every live metric must expose its last-updated timestamp or have a clear page-level freshness state.
+   297→- If live data is not available, show “Last updated at …” and “Data may be stale”; never silently present old values as current.
+   298→- Avoid inventing an “AI recommendation” panel in the MVP. Add decision-support features only when their data, assumptions, and validation are defensible.
+   299→
+   300→## 6.2 Situation Map
+   301→
+   302→### Map layers
+   303→
+   304→- Node deployment references.
+   305→- Current node positions from a GPS module, where available.
+   306→- Survivor-provided locations.
+   307→- SOS/incidents.
+   308→- Shelters, supply points, and known safe locations.
+   309→- Optional manually marked hazards or operational zones.
+   310→
+   311→### Map behaviors
+   312→
+   313→- Marker clusters for crowded areas.
+   314→- Filters for time range, status, severity, node capability, and location source.
+   315→- Marker selection opens a details drawer with a link to the full record.
+   316→- Show a timestamp and accuracy/confidence where supplied.
+   317→- Distinguish locked deployment position, GPS position, manual position, and approximate node-associated search area.
+   318→- Do not infer a survivor's precise position from node range or signal strength.
+   319→- Show an explicit state when offline tiles are missing at the current zoom/area.
+   320→- Provide list/table alternatives for operators who cannot use the map or for locations that are not geocoded.
+   321→
+   322→### Offline map requirements
+   323→
+   324→- Do not depend on public online tile servers during an offline incident.
+   325→- Preload an appropriate map area and zoom levels, or use a licensed offline package.
+   326→- Check map data licensing and attribution requirements.
+   327→- Document storage required for each package and how to replace/update it.
+   328→- Cache assets deliberately; browser caching alone is not a complete offline map strategy.
+   329→
+   330→## 6.3 SOS and Incident Management
+   331→
+   332→### Incident fields
+   333→
+   334→- Unique incident ID.
+   335→- Incident/report category.
+   336→- Severity or priority and the rule used to set it.
+   337→- Status.
+   338→- Created, acknowledged, assigned, and resolved timestamps where applicable.
+   339→- Source type: survivor portal, operator, node, or import.
+   340→- Source node ID, if known.
+   341→- Reported coordinates, coordinate source, accuracy, and location timestamp.
+   342→- Text description and structured needs.
+   343→- Number of people affected, if reported.
+   344→- Assigned operator/team.
+   345→- Notes and attachments, if supported.
+   346→- Related/possible duplicate incident IDs.
+   347→
+   348→### Suggested statuses
+   349→
+   350→`NEW → ACKNOWLEDGED → ASSIGNED → IN_PROGRESS → RESOLVED`
+   351→
+   352→Optional terminal outcomes may include `CANCELLED` or `DUPLICATE`. Validate allowed transitions on the backend. Do not let a client set an arbitrary status string.
+   353→
+   354→### Incident UI
+   355→
+   356→- Filter by status, severity, category, team, time, and location.
+   357→- Sort by priority, then age; document the rule.
+   358→- Show unacknowledged incidents prominently without hiding older incidents.
+   359→- Provide an incident detail view with history and assignment.
+   360→- Require confirmation for resolve/cancel actions where appropriate.
+   361→- Record each transition in an append-only event/history table.
+   362→- Handle duplicate submissions with an idempotency key or stable client-generated submission ID where possible.
+   363→
+   364→### Critical delivery semantics
+   365→
+   366→A backend `201 Created` response means the Pi API committed the record, not that a field team has seen it. A node-side queue means “queued on node.” A destination acknowledgement is a separate state. The UI must not conflate these states.
+   367→
+   368→## 6.4 Survivor Registry
+   369→
+   370→- Temporary survivor ID.
+   371→- Reported name/contact only if voluntarily supplied and operationally needed.
+   372→- First seen/last contact times.
+   373→- Location with source, accuracy and timestamp.
+   374→- Reported needs and related incidents.
+   375→- Rescue/follow-up status.
+   376→- Related duplicate records and merge history.
+   377→
+   378→Use access controls and data minimization. A survivor report should not require a phone number or legal identity. Avoid showing sensitive contact data to roles that do not need it.
+   379→
+   380→## 6.5 Node Management
+   381→
+   382→### Node list columns
+   383→
+   384→- Node ID and optional operator-friendly name.
+   385→- Online/offline/stale/fault state.
+   386→- Last heartbeat.
+   387→- Battery or supply voltage, if reported.
+   388→- Current link metrics, if supported.
+   389→- Current reported module summary.
+   390→- Deployment location.
+   391→- Firmware and protocol version.
+   392→- Last known connected-client count, if supported.
+   393→
+   394→### Node details tabs
+   395→
+   396→1. **Overview:** identity, firmware, health, uptime, link state, heartbeat.
+   397→2. **Location:** locked deployment location, current GPS location (if present), accuracy, distance from reference and history.
+   398→3. **Modules:** discovered capabilities and per-module health.
+   399→4. **Events:** boot/reconnect, warnings, sensor faults, movement alerts.
+   400→5. **Configuration:** only supported, validated settings for the node.
+   401→
+   402→### Node lifecycle
+   403→
+   404→Suggested lifecycle: `REGISTERED → DEPLOYED → MAINTENANCE → RETIRED`. Online/offline state is a separate runtime state, not a replacement for lifecycle status.
+   405→
+   406→### Deployment reference coordinates
+   407→
+   408→Store deployment coordinates separately from live coordinates. Locking a reference location should store who set it and when. Updating it should require explicit permission and generate an audit event. A displacement alert must account for GPS accuracy, repeated readings, and a configurable threshold; a single noisy reading should not automatically establish that the node has moved.
+   409→
+   410→If no GPS module is present or no fresh fix is available, show the deployment reference and label current location as unavailable. Do not claim that the node has moved without evidence.
+   411→
+   412→## 6.6 Module Management and capability discovery
+   413→
+   414→The frontend should render only known, allowlisted module types and capabilities from a validated report.
+   415→
+   416→### Module states
+   417→
+   418→Use distinct states such as:
+   419→
+   420→- `PRESENT_ONLINE`
+   421→- `PRESENT_DEGRADED`
+   422→- `PRESENT_OFFLINE`
+   423→- `NOT_DETECTED`
+   424→- `UNKNOWN` (report absent, stale, invalid, or incompatible)
+   425→
+   426→Do not collapse “not detected” and “unknown.” A missing report is not proof that hardware is absent.
+   427→
+   428→### Example capability descriptor
+   429→
+   430→```json
+   431→{
+   432→  "protocol_version": "1.0",
+   433→  "node_id": "NODE-007",
+   434→  "firmware_version": "1.2.0",
+   435→  "hardware_revision": "A1",
+   436→  "reported_at": "2026-10-11T04:10:00Z",
+   437→  "modules": [
+   438→    {
+   439→      "module_id": "GPS-001",
+   440→      "type": "GPS",
+   441→      "status": "ONLINE",
+   442→      "capabilities": ["location", "speed", "utc_time"],
+   443→      "firmware_version": "1.0.2"
+   444→    },
+   445→    {
+   446→      "module_id": "CAM-001",
+   447→      "type": "CAMERA",
+   448→      "status": "ONLINE",
+   449→      "capabilities": ["photo_capture"],
+   450→      "firmware_version": "1.0.0"
+   451→    }
+   452→  ]
+   453→}
+   454→```
+   455→
+   456→This is an illustrative contract. Choose field names and allowed values once, put the schema under version control, and validate descriptors at the API boundary. The Pi should use the schema version and allowlisted registry to decide what to render.
+   457→
+   458→### Dynamic UI rules
+   459→
+   460→- GPS module with a valid fix: render coordinates, last-fix time, and quality fields the firmware actually reports.
+   461→- GPS module without a valid fix: render “GPS detected — no current fix,” not coordinates from an old reading without a stale label.
+   462→- Camera module: show camera controls only if the module supports the relevant operation and the operator has permission.
+   463→- IMU module: show only the movement/orientation measurements actually implemented in the firmware.
+   464→- No optional module: show core node health and deployment reference location.
+   465→- Unknown capability or incompatible protocol: show a safe diagnostic message; never execute arbitrary module-provided code.
+   466→
+   467→A physical expansion connector does not by itself create true plug-and-play discovery. Firmware, electrical interface, power limits, connector pinout, module IDs, and a discovery protocol must be designed and tested.
+   468→
+   469→## 6.7 Communications and Messages
+   470→
+   471→- Message ID, sender, recipient/group, type, creation time, body/payload reference, and delivery state.
+   472→- States should distinguish `CREATED`, `ACCEPTED_BY_GATEWAY`, `QUEUED_FOR_NODE`, `FORWARDED`, `ACKNOWLEDGED`, `FAILED`, and `EXPIRED` as applicable to the actual transport.
+   473→- Provide retries and expiry policy for supported messages.
+   474→- Limit payload size; route images through a deliberate attachment mechanism rather than blocking the emergency-message channel.
+   475→- Show failure reason and last attempt.
+   476→- Provide a clear indication when a broadcast was only accepted by the Pi, not acknowledged by receiving nodes.
+   477→
+   478→## 6.8 Resources and Shelters
+   479→
+   480→### Shelter fields
+   481→
+   482→- Shelter ID/name, coordinates, capacity, occupancy estimate, status, last updated time, and responsible operator/source.
+   483→
+   484→### Resource fields
+   485→
+   486→- Resource ID/type, unit, available quantity, reserved quantity if used, location, last updated time, and update source.
+   487→
+   488→### Actions
+   489→
+   490→- Create/update shelter and stock records.
+   491→- Record inbound requests.
+   492→- Assign and fulfill requests.
+   493→- Flag low stock by configurable thresholds.
+   494→- Audit manual adjustments.
+   495→
+   496→For the MVP, use explicit manual updates. Do not present estimated stock or occupancy as sensor-verified unless the relevant hardware has been implemented and validated.
+   497→
+   498→## 6.9 Reports and Audit
+   499→
+   500→Reports can include:
+   501→
+   502→- Incident totals by category, status, priority and time range.
+   503→- Acknowledgement/assignment/resolution durations.
+   504→- Node uptime and missed-heartbeat summaries.
+   505→- Battery and module fault history.
+   506→- Message forwarding and acknowledgement outcomes.
+   507→- Resource request/fulfilment totals.
+   508→- Operator audit trail.
+   509→
+   510→Allow CSV/JSON export for the first release. If a report contains personal or location data, require appropriate permissions and avoid exporting more detail than necessary. Clearly label data gaps caused by offline periods.
+   511→
+   512→## 6.10 System Settings
+   513→
+   514→- Operator management and role assignment.
+   515→- Node and capability protocol versions.
+   516→- Alert thresholds and heartbeat timeout.
+   517→- Gateway, database, and storage health.
+   518→- Backup and restore status.
+   519→- Offline map package inventory.
+   520→- Local time and UTC timestamp handling.
+   521→- Session policy and audit retention.
+   522→- Application build/version information.
+   523→
+   524→Configuration values should have safe bounds, validation, and audit entries. Do not expose arbitrary shell-command execution from the web UI.
+   525→
+   526→---
+   527→
+   528→## 7. Backend API contract
+   529→
+   530→All routes below are proposed. Implement and document request schemas, response schemas, permission rules, validation, pagination, and error codes before the frontend depends on them.
+   531→
+   532→### 7.1 Conventions
+   533→
+   534→- Prefix endpoints with `/api/v1` from the start to make future versioning explicit.
+   535→- Use JSON for ordinary API requests and responses.
+   536→- Use ISO 8601 timestamps in UTC, such as `2026-10-11T04:10:00Z`.
+   537→- Use stable string or UUID identifiers; do not depend on database row positions.
+   538→- Add pagination to list endpoints.
+   539→- Use query parameters for filtering and sorting.
+   540→- Return machine-readable error codes plus safe human-readable messages.
+   541→- Validate every input on the backend, even if the frontend validates it too.
+   542→- Use an idempotency key or client submission ID for retryable incident creation.
+   543→
+   544→### 7.2 Proposed endpoints
+   545→
+   546→| Method | Endpoint | Purpose / access |
+   547→|---|---|---|
+   548→| `POST` | `/api/v1/auth/login` | Authenticate local operator |
+   549→| `POST` | `/api/v1/auth/logout` | End session |
+   550→| `GET` | `/api/v1/auth/me` | Current user and permitted roles |
+   551→| `GET` | `/api/v1/overview` | Authorized overview metrics |
+   552→| `GET` | `/api/v1/health` | API health; minimize public diagnostic detail |
+   553→| `GET` | `/api/v1/nodes` | Filterable node inventory |
+   554→| `POST` | `/api/v1/nodes` | Register a node; technician/admin |
+   555→| `GET` | `/api/v1/nodes/{node_id}` | Node details |
+   556→| `PATCH` | `/api/v1/nodes/{node_id}` | Update allowed metadata/lifecycle fields |
+   557→| `POST` | `/api/v1/nodes/{node_id}/deployment` | Set or change deployment reference |
+   558→| `GET` | `/api/v1/nodes/{node_id}/events` | Node event history |
+   559→| `GET` | `/api/v1/nodes/{node_id}/capabilities` | Latest validated capability report |
+   560→| `POST` | `/api/v1/nodes/{node_id}/capability-reports` | Submit authenticated node descriptor |
+   561→| `POST` | `/api/v1/nodes/{node_id}/heartbeats` | Submit heartbeat and health |
+   562→| `GET` | `/api/v1/incidents` | Filterable incident queue |
+   563→| `POST` | `/api/v1/incidents` | Create incident from an authorized source |
+   564→| `GET` | `/api/v1/incidents/{incident_id}` | Incident detail and history |
+   565→| `PATCH` | `/api/v1/incidents/{incident_id}` | Update allowed incident fields/status |
+   566→| `POST` | `/api/v1/incidents/{incident_id}/assignments` | Assign team/operator |
+   567→| `POST` | `/api/v1/incidents/{incident_id}/notes` | Add a timestamped note |
+   568→| `GET` | `/api/v1/survivors` | Filterable survivor reports |
+   569→| `GET` | `/api/v1/survivors/{survivor_id}` | Survivor report detail |
+   570→| `GET` | `/api/v1/messages` | Message history |
+   571→| `POST` | `/api/v1/messages` | Create a message/broadcast |
+   572→| `GET` | `/api/v1/resources` | Resource inventory |
+   573→| `POST` | `/api/v1/resources/requests` | Submit a resource request |
+   574→| `GET` | `/api/v1/shelters` | Shelter list/map records |
+   575→| `GET` | `/api/v1/reports/incidents` | Incident metrics and export inputs |
+   576→| `GET` | `/api/v1/audit-logs` | Restricted audit history |
+   577→| `WS` | `/api/v1/ws` | Authorized live event stream |
+   578→
+   579→Avoid building all endpoints at once. Implement the routes required by the first end-to-end workflow, then expand.
+   580→
+   581→### 7.3 Example SOS request
+   582→
+   583→```json
+   584→{
+   585→  "client_submission_id": "phone-local-id-00042",
+   586→  "category": "RESCUE",
+   587→  "description": "Two people need assistance",
+   588→  "people_affected": 2,
+   589→  "location": {
+   590→    "latitude": 16.50,
+   591→    "longitude": 80.64,
+   592→    "source": "BROWSER_GNSS",
+   593→    "accuracy_m": 25,
+   594→    "captured_at": "2026-10-11T04:10:00Z"
+   595→  },
+   596→  "source_node_id": "NODE-007"
+   597→}
+   598→```
+   599→
+   600→Illustrative only. In production, coordinate fields must be range-checked, location source must use an allowlist, timestamps must be validated, and untrusted callers must not be allowed to impersonate a node merely by setting `source_node_id`. Do not treat example coordinates as real incident data.
+   601→
+   602→### 7.4 Example response
+   603→
+   604→```json
+   605→{
+   606→  "incident_id": "SOS-1042",
+   607→  "status": "NEW",
+   608→  "created_at": "2026-10-11T04:10:01Z",
+   609→  "accepted_by_gateway": true
+   610→}
+   611→```
+   612→
+   613→The API should acknowledge successful persistence only after the database transaction has succeeded. This response does not mean a team has received or acknowledged the incident.
+   614→
+   615→### 7.5 Error handling
+   616→
+   617→Use a consistent error envelope, for example:
+   618→
+   619→```json
+   620→{
+   621→  "error": {
+   622→    "code": "VALIDATION_ERROR",
+   623→    "message": "The submitted location is invalid.",
+   624→    "request_id": "req-example"
+   625→  }
+   626→}
+   627→```
+   628→
+   629→Expected cases include unauthenticated, forbidden, validation failure, not found, stale version/conflict, rate limit, duplicate submission, API unavailable, and storage failure. Do not reveal secrets or sensitive stack traces to the browser.
+   630→
+   631→---
+   632→
+   633→## 8. WebSocket event contract
+   634→
+   635→Use WebSockets to make the operator interface responsive, but do not make the WebSocket stream the only way data can be recovered.
+   636→
+   637→### 8.1 Envelope
+   638→
+   639→```json
+   640→{
+   641→  "event_id": "evt-1042",
+   642→  "event_type": "incident.created",
+   643→  "occurred_at": "2026-10-11T04:10:01Z",
+   644→  "schema_version": "1.0",
+   645→  "entity_id": "SOS-1042",
+   646→  "data": {
+   647→    "status": "NEW",
+   648→    "source_node_id": "NODE-007"
+   649→  }
+   650→}
+   651→```
+   652→
+   653→### 8.2 Event types to consider
+   654→
+   655→- `incident.created`
+   656→- `incident.updated`
+   657→- `incident.assigned`
+   658→- `node.status_changed`
+   659→- `node.heartbeat_received`
+   660→- `node.capabilities_updated`
+   661→- `node.displacement_warning`
+   662→- `module.status_changed`
+   663→- `message.delivery_updated`
+   664→- `resource.requested`
+   665→- `resource.updated`
+   666→- `system.health_changed`
+   667→
+   668→### 8.3 Reliability rules
+   669→
+   670→- Publish events after the corresponding database transaction succeeds.
+   671→- Include unique event IDs and timestamps.
+   672→- Reconnect with bounded exponential backoff and jitter.
+   673→- On reconnect, fetch changes since a known cursor or refetch the relevant list/detail. WebSocket delivery alone should not be assumed durable.
+   674→- Deduplicate repeated event IDs on the client.
+   675→- If events arrive out of order, use timestamps/version fields and refetch the authoritative record when needed.
+   676→- Limit WebSocket subscriptions by role and permitted data scope.
+   677→- Use REST polling as a fallback for critical views if WebSockets are unavailable.
+   678→
+   679→---
+   680→
+   681→## 9. Database design
+   682→
+   683→SQLite is a reasonable initial choice for a single Raspberry Pi prototype. Keep write transactions short and define backup and recovery procedures. SQLite is not a distributed shared database for every ESP32; the Pi hosts the authoritative database.
+   684→
+   685→### 9.1 Suggested tables
+   686→
+   687→| Table | Core fields (indicative) | Notes |
+   688→|---|---|---|
+   689→| `operators` | id, username, password_hash, role, active, created_at | Never store plaintext passwords |
+   690→| `nodes` | id, display_name, hardware_revision, firmware_version, protocol_version, lifecycle_state, deployment_lat, deployment_lon, deployment_locked_at, created_at | Locked reference location separate from live location |
+   691→| `node_heartbeats` | id, node_id, received_at, node_reported_at, battery, link_quality, uptime, health_state, connected_clients | Only fields the hardware actually reports |
+   692→| `node_locations` | id, node_id, latitude, longitude, accuracy_m, source, captured_at, received_at | Keep current/history separate from deployment reference |
+   693→| `capability_reports` | id, node_id, protocol_version, descriptor_json, valid, received_at, error_code | Preserve validated descriptor history as needed |
+   694→| `modules` | id, node_id, module_id, module_type, status, firmware_version, last_seen_at | Can be derived from latest report, but normalized records help history |
+   695→| `incidents` | id, client_submission_id, category, priority, status, description, people_affected, location fields, source, source_node_id, created_at, updated_at, assigned_to | Unique/idempotency constraint on stable client submission key where appropriate |
+   696→| `incident_events` | id, incident_id, event_type, old_value, new_value, actor_type, actor_id, created_at, note | Append-only incident history |
+   697→| `survivors` | id, temporary_reference, optional contact fields, first_seen_at, last_seen_at, status | Minimize personally identifying data |
+   698→| `messages` | id, source, destination, payload_reference, status, created_at, expires_at | Distinguish gateway acceptance from destination acknowledgement |
+   699→| `message_attempts` | id, message_id, attempted_at, outcome, error_code | Helps inspect intermittent links |
+   700→| `resources` | id, resource_type, unit, quantity, reserved_quantity, location, updated_at, updated_by | Use transactions to protect quantity updates |
+   701→| `shelters` | id, name, latitude, longitude, capacity, occupancy_estimate, status, updated_at | Clearly label estimates and source |
+   702→| `audit_logs` | id, actor_type, actor_id, action, entity_type, entity_id, timestamp, metadata | Restrict read access; avoid unnecessary sensitive payloads |
+   703→| `system_events` | id, event_type, severity, entity_type, entity_id, payload_json, occurred_at | General operational history |
+   704→
+   705→These are design-level fields, not a final migration. Normalize or combine tables based on implementation needs and query patterns. Add foreign keys, indexes, checks, and unique constraints deliberately.
+   706→
+   707→### 9.2 Database practices
+   708→
+   709→- Use migrations so the schema can evolve safely.
+   710→- Enable foreign-key enforcement.
+   711→- Use transactions for incident transitions, assignments, and resource quantity changes.
+   712→- Index common filter fields: status, created time, node ID, and incident priority where appropriate.
+   713→- Store UTC timestamps consistently; format them to local time in the UI.
+   714→- Define retention rules for location history, messages, attachments, and audit records.
+   715→- Back up to a separate storage location when possible, not only to the same SD card.
+   716→- Test restoring a backup; creating backups without testing restoration is insufficient.
+   717→- Avoid large binary image blobs in SQLite for the initial design; store files with controlled paths/metadata and reference them from the database if images are implemented.
+   718→
+   719→---
+   720→
+   721→## 10. Frontend behavior and state management
+   722→
+   723→### 10.1 State categories
+   724→
+   725→Keep different kinds of state separate:
+   726→
+   727→- **Server state:** nodes, incidents, survivors, resources, health data; fetched and invalidated through the API client.
+   728→- **Live event state:** connection status and event cursor; used to trigger updates/re-fetches.
+   729→- **UI state:** open modal, active tab, visible filters, table sorting.
+   730→- **Draft state:** unsaved form content; show when a draft has not been persisted.
+   731→- **Offline state:** last successful fetch time, stale flags, write capability, pending local client submissions where implemented.
+   732→
+   733→Do not treat data copied into React state as the source of truth. The backend remains authoritative.
+   734→
+   735→### 10.2 Shared reusable components
+   736→
+   737→Implement reusable components for:
+   738→
+   739→- `AppShell`, `Sidebar`, `TopBar`, `ConnectionBanner`
+   740→- `StatusBadge`, `SeverityLabel`, `FreshnessLabel`
+   741→- `DataTable`, `FilterBar`, `Pagination`
+   742→- `MapPanel`, `EntityDetailsDrawer`
+   743→- `AlertBanner`, `Toast`, `EmptyState`, `ErrorState`, `LoadingSkeleton`
+   744→- `ConfirmDialog`, `PermissionGate`
+   745→- `LocationField`, `TimestampDisplay`, `BatteryIndicator`
+   746→
+   747→These components should accept typed data and not contain unrelated API/database logic.
+   748→
+   749→### 10.3 Common page states
+   750→
+   751→Every data page should design for all of these states:
+   752→
+   753→1. Initial loading.
+   754→2. Successfully loaded with records.
+   755→3. Successfully loaded but empty.
+   756→4. Partial data with some unavailable fields.
+   757→5. Stale data due to lost connection.
+   758→6. API error with retry action.
+   759→7. Insufficient permissions.
+   760→8. Invalid or incompatible record.
+   761→
+   762→A blank table should not be the only response to every failure.
+   763→
+   764→### 10.4 Forms and destructive actions
+   765→
+   766→- Validate inputs for usability before submitting, then validate again on the API.
+   767→- Disable duplicate submissions while a request is pending.
+   768→- Preserve a user-entered draft after a transient error where safe.
+   769→- Show whether the backend accepted a write, not merely whether the button was clicked.
+   770→- Ask for confirmation before changing locked deployment coordinates, retiring a node, merging survivor records, or resolving/cancelling important incidents.
+   771→- Show the reason for a failure in language an operator can act on.
+   772→
+   773→---
+   774→
+   775→## 11. Offline and degraded-mode requirements
+   776→
+   777→Offline operation must have a precise meaning. The browser, Pi, and ESP32 nodes can lose connectivity independently.
+   778→
+   779→### 11.1 Dashboard-to-Pi outage
+   780→
+   781→- Show that the API is unreachable and mark displayed server data stale.
+   782→- Do not allow writes to appear successful while the API is unavailable.
+   783→- Reconnect automatically with backoff.
+   784→- Re-fetch authoritative records after reconnecting.
+   785→- Keep cached interface assets available if deliberately configured, but do not imply that cached records are current.
+   786→
+   787→### 11.2 Node-to-Pi outage
+   788→
+   789→- Nodes may queue a defined set of small messages locally.
+   790→- Each queued message needs an ID, creation time, retry/expiry rules, and an acknowledgement model.
+   791→- The node must have a documented storage limit and overflow policy.
+   792→- When the link returns, forward queued messages and handle duplicates idempotently.
+   793→- The dashboard should identify when a report was generated earlier but received later.
+   794→
+   795→ESP32 RAM/flash is limited. Do not assume every node can hold a full database, full offline map package, or unlimited images. Store only the small amount of data the chosen use case requires.
+   796→
+   797→### 11.3 Internet outage
+   798→
+   799→The core local dashboard and API should not depend on public internet services. Bundle frontend assets locally, use local DNS or a documented local address, preload required maps, and avoid CDN-hosted scripts/fonts needed for core operation.
+   800→
+   801→### 11.4 Clock problems
+   802→
+   803→Offline devices may have incorrect clocks. Keep both device-reported and gateway-received timestamps where useful. Display uncertainty if clock synchronization has not occurred; do not silently assume every device clock is accurate.
+   804→
+   805→---
+   806→
+   807→## 12. Location, movement, and data confidence
+   808→
+   809→Location is a safety-critical field and must not be displayed without context.
+   810→
+   811→Each location should ideally include:
+   812→
+   813→- Latitude and longitude.
+   814→- Source: browser GNSS, node GPS, manual entry, deployment reference, or approximate association.
+   815→- Capture timestamp and gateway receipt timestamp.
+   816→- Accuracy estimate, when available.
+   817→- Validity/fix state.
+   818→
+   819→Rules:
+   820→
+   821→1. Never call a deployment reference the current position unless the UI explicitly labels it as the reference position.
+   822→2. Never call a node's coordinates the survivor's exact coordinates.
+   823→3. A stale GPS reading must show its age.
+   824→4. A displacement alarm should incorporate reported GPS accuracy, multiple readings, and a threshold suitable for the hardware and environment.
+   825→5. An IMU may detect movement/tilt but does not provide absolute position on its own.
+   826→6. RSSI can be affected by walls, people, antenna orientation, interference, and multipath; do not present RSSI-based estimates as precise triangulation without experimental validation.
+   827→7. If no current position exists, preserve the SOS flow and clearly label location as unavailable or approximate.
+   828→
+   829→---
+   830→
+   831→## 13. Privacy and security requirements
+   832→
+   833→ResQNet may handle sensitive information about people in distress. Design privacy and security from the start, not as a final polish step.
+   834→
+   835→- Collect only fields needed for emergency response.
+   836→- Restrict survivor and precise-location views by role.
+   837→- Avoid putting sensitive data into ordinary application logs or error messages.
+   838→- Use authenticated sessions for operator pages and authorize all API actions server-side.
+   839→- Validate and limit every client/node payload size.
+   840→- Validate capability descriptors against a schema and an allowlist.
+   841→- Do not execute code, dynamic imports, or shell commands supplied by nodes.
+   842→- Authenticate node-to-gateway messages and consider replay protection.
+   843→- Use an expiry policy for queued messages that would become unsafe or irrelevant after a period.
+   844→- Audit sensitive reads/exports where operationally appropriate, plus all high-impact edits.
+   845→- Back up the database securely and control access to backup files.
+   846→- Keep dependency updates and firmware revisions traceable.
+   847→- Document how operators revoke a node credential if a device is lost or compromised.
+   848→
+   849→For a prototype, use synthetic test data until access controls, device authentication, backups, and data handling have been exercised.
+   850→
+   851→---
+   852→
+   853→## 14. Performance and reliability targets
+   854→
+   855→Set targets for the prototype and measure them on the actual hardware. The values below are suggested initial acceptance targets, not proven performance claims.
+   856→
+   857→- Dashboard initial load on the local network: target under 3 seconds on the test device/network.
+   858→- Routine API reads with modest local data: target under 500 ms at the 95th percentile on the Pi test setup.
+   859→- Once the API commits an SOS, the connected dashboard should ordinarily show it within 2 seconds under the tested LAN/WebSocket conditions.
+   860→- Reconnect without a full page reload after a short WebSocket interruption.
+   861→- Paginate large incident/event lists; do not load unbounded history by default.
+   862→- Never make a camera/image transfer block the primary SOS API path.
+   863→- Keep operational errors visible but do not flood the operator with duplicate alerts.
+   864→
+   865→Measurements must document Pi model, storage, network setup, number of simulated nodes, payload sizes, and test method. Revise targets if measurements show they are unrealistic.
+   866→
+   867→---
+   868→
+   869→## 15. Accessibility and responsive design
+   870→
+   871→- Support keyboard navigation and visible focus states.
+   872→- Use text labels alongside colors and icons for statuses.
+   873→- Keep primary incident actions easy to find and large enough to operate under stress.
+   874→- Avoid color-only severity coding; use readable text such as “High” or “Unacknowledged.”
+   875→- Keep tables usable on laptop screens and provide a stacked/compact alternative on narrow displays.
+   876→- Provide clear confirmation for dangerous actions and an undo/correction path when practical.
+   877→- Use readable contrast, meaningful form labels, and appropriate ARIA labels where needed.
+   878→- Show timestamps in a consistent format and provide unambiguous date/time values in detail views.
+   879→- Avoid animation that distracts from incident priority; honor reduced-motion preferences.
+   880→
+   881→The dashboard is optimized for operators, but it may be opened on a tablet or phone during field work. The survivor portal is a separate, simpler user experience.
+   882→
+   883→---
+   884→
+   885→## 16. Testing strategy
+   886→
+   887→Testing must cover more than whether pages render.
+   888→
+   889→### 16.1 Frontend tests
+   890→
+   891→- Sidebar navigation and route protection.
+   892→- Empty, loading, error, stale, and partial-data states.
+   893→- Incident filters, sorting, pagination, and detail navigation.
+   894→- Role-based visibility for operator actions.
+   895→- Capability-driven module rendering from valid and invalid descriptors.
+   896→- WebSocket disconnect/reconnect and duplicate events.
+   897→- Form validation and duplicate-submit prevention.
+   898→
+   899→### 16.2 Backend tests
+   900→
+   901→- Authentication and role permissions.
+   902→- Schema validation for all request bodies.
+   903→- Incident lifecycle and valid/invalid status transitions.
+   904→- Database transaction rollback on failures.
+   905→- Idempotency for retried SOS submissions.
+   906→- Capability schema/version validation.
+   907→- Node identity and replay protection.
+   908→- Resource quantity consistency.
+   909→- Audit event creation for sensitive actions.
+   910→
+   911→### 16.3 Integration tests
+   912→
+   913→Test at minimum these flows:
+   914→
+   915→1. A simulated survivor submission reaches FastAPI and is persisted.
+   916→2. The dashboard sees the incident via WebSocket or its fallback and can acknowledge it.
+   917→3. The dashboard correctly handles an API restart.
+   918→4. A node reports a GPS-only descriptor and only GPS features appear.
+   919→5. A node reports GPS plus camera and both supported feature sets appear.
+   920→6. A node with no optional modules still displays its locked deployment reference.
+   921→7. An invalid or unsupported descriptor is rejected or safely marked incompatible.
+   922→8. A stale GPS value is displayed as stale, not current.
+   923→9. Node movement alerts require sufficient valid evidence and create an audit/event record.
+   924→10. A node loses its gateway link, queues a test message, reconnects, forwards it, and duplicate forwarding does not create duplicate incidents.
+   925→11. The Pi reboots and the database records persist.
+   926→12. A backup can be restored successfully.
+   927→
+   928→### 16.4 Field/network tests
+   929→
+   930→- Test the chosen radio topology in realistic distances and obstructions.
+   931→- Measure delivery latency, packet loss, retries, queue growth, and battery consumption.
+   932→- Test when some nodes are offline but others remain reachable.
+   933→- Test browser geolocation behavior on the actual Android/iOS device and portal origin.
+   934→- Test offline map coverage, tile storage, and UI behavior outside the downloaded area.
+   935→
+   936→Do not market the system as rescue-ready based only on UI or simulator tests. Real field deployment requires supervised hardware testing and an operational safety plan.
+   937→
+   938→---
+   939→
+   940→## 17. Acceptance criteria for the first usable release
+   941→
+   942→The MVP is complete only when all relevant criteria below pass on the intended Raspberry Pi and node setup.
+   943→
+   944→### Dashboard foundation
+   945→- [ ] Operator can sign in locally and log out.
+   946→- [ ] Navigation works and unauthorized routes/actions are restricted by the backend.
+   947→- [ ] API/gateway state and data freshness are visible.
+   948→- [ ] Critical pages show loading, empty, failure and stale-data states.
+   949→
+   950→### Nodes and capabilities
+   951→- [ ] A node can be registered with a stable unique ID.
+   952→- [ ] Authenticated heartbeat reports update runtime state.
+   953→- [ ] The dashboard distinguishes online, stale, offline, and fault states.
+   954→- [ ] Deployment reference coordinates are stored separately from current location.
+   955→- [ ] The capability report is validated and versioned.
+   956→- [ ] GPS-only, GPS+camera, and no-optional-module cases are handled correctly.
+   957→- [ ] Unsupported or stale reports are shown as unknown/incompatible, not silently trusted.
+   958→
+   959→### Incidents
+   960→- [ ] A survivor-side test submission is saved in the Pi database when the configured network path is available.
+   961→- [ ] Retrying a request does not create duplicate incidents when the same submission ID is used.
+   962→- [ ] The dashboard receives or fetches the new incident.
+   963→- [ ] An authorized operator can acknowledge, assign, update, and resolve the incident.
+   964→- [ ] All important status changes are recorded in incident history and the audit trail.
+   965→- [ ] UI distinguishes local queueing, gateway acceptance, forwarding, and destination acknowledgement.
+   966→
+   967→### Offline/recovery
+   968→- [ ] Dashboard shows stale state when the API becomes unreachable.
+   969→- [ ] The client reconnects and refetches authoritative state after recovery.
+   970→- [ ] The node queue has a documented size limit, expiry policy, and duplicate-handling behavior.
+   971→- [ ] Essential frontend assets and configured map data work without public internet.
+   972→- [ ] Database backup and restoration are tested.
+   973→
+   974→### Security and privacy
+   975→- [ ] No browser client accesses SQLite directly.
+   976→- [ ] All state-changing API endpoints enforce authorization.
+   977→- [ ] Node identity is authenticated by the selected design.
+   978→- [ ] Logs do not unnecessarily expose sensitive survivor data.
+   979→- [ ] The operator can revoke compromised node credentials.
+   980→
+   981→---
+   982→
+   983→## 18. Recommended development order
+   984→
+   985→Build one functioning end-to-end slice before implementing every dashboard page.
+   986→
+   987→### Phase 0 — Resolve critical architecture decisions
+   988→
+   989→1. Select and document how ESP32 nodes communicate with the Pi.
+   990→2. Decide where the Survivor Portal is hosted and how its browser reaches the API.
+   991→3. Test browser geolocation on target phones and the chosen portal origin.
+   992→4. Define node identity and capability descriptor schemas.
+   993→5. Decide how local queued SOS reports are acknowledged and deduplicated.
+   994→
+   995→**Do not skip this phase.** These choices affect the whole product and cannot be fixed by adding frontend code alone.
+   996→
+   997→### Phase 1 — Local API and database
+   998→
+   999→1. Set up the FastAPI app, SQLite database, migrations, and health endpoint.
+  1000→2. Implement local operator login and authorization.
+  1001→3. Add nodes and heartbeat records.
+  1002→4. Add an incident-create endpoint with validation and idempotency.
+  1003→5. Add basic audit records.
+  1004→
+  1005→### Phase 2 — Dashboard shell
+  1006→
+  1007→1. Create React + TypeScript + Vite app.
+  1008→2. Build the responsive sidebar, top bar, connection banner, and routing.
+  1009→3. Create a typed API client and common loading/error/empty components.
+  1010→4. Build Overview, Node List, Node Details, and Incident Queue pages using real API responses.
+  1011→
+  1012→### Phase 3 — First end-to-end SOS flow
+  1013→
+  1014→1. Submit a test SOS through the Survivor Portal or a simple test client.
+  1015→2. Persist the record on the Pi.
+  1016→3. Publish a WebSocket event after successful persistence.
+  1017→4. Display the incident in the dashboard.
+  1018→5. Acknowledge and assign the incident from the dashboard.
+  1019→6. Verify that both UI clients show the authoritative status after refetch/reconnect.
+  1020→
+  1021→### Phase 4 — Capability-driven node UI
+  1022→
+  1023→1. Implement descriptor schemas and validation.
+  1024→2. Send reports from firmware or a simulator.
+  1025→3. Create the module registry and safe dynamic rendering.
+  1026→4. Add health states and stale descriptor behavior.
+  1027→5. Implement locked deployment coordinates and conservative displacement detection.
+  1028→
+  1029→### Phase 5 — Mapping and operations
+  1030→
+  1031→1. Package offline maps for a small test area.
+  1032→2. Add incident/node/shelter layers.
+  1033→3. Add survivor registry, messages, resources, and reports as needed.
+  1034→4. Add event history and practical operational filters.
+  1035→
+  1036→### Phase 6 — Resilience and field validation
+  1037→
+  1038→1. Test power interruption and Pi reboot.
+  1039→2. Test loss and restoration of radio links.
+  1040→3. Test storage-full and queue-overflow behavior.
+  1041→4. Measure latency, data freshness, and radio range in the target environment.
+  1042→5. Validate backup restoration, node credential revocation, and operator access controls.
+  1043→6. Document limitations before demonstrating the system as a disaster-response tool.
+  1044→
+  1045→---
+  1046→
+  1047→## 19. Decisions that must be recorded before the build is considered stable
+  1048→
+  1049→Track these in the project README or an architecture decision log.
+  1050→
+  1051→| Decision | Why it matters | Required outcome |
+  1052→|---|---|---|
+  1053→| Node-to-Pi transport | Determines reach, throughput, payload size and gateway design | Chosen topology, protocol, retry strategy, and measured limits |
+  1054→| Survivor Portal origin/hosting | Affects browser-to-API access and browser geolocation | Tested Android/iOS flow with documented limitations |
+  1055→| Node authentication method | Prevents spoofed node reports | Provisioning, storage, rotation and revocation procedure |
+  1056→| Capability protocol versioning | Allows firmware and dashboard to evolve safely | Versioned schema and compatibility policy |
+  1057→| Offline message queue | Prevents loss/duplicates during intermittent links | Queue limits, expiry, acknowledgement and idempotency rules |
+  1058→| GPS displacement rule | Prevents false movement alarms | Threshold, accuracy handling, confirmation readings, and alert cooldown |
+  1059→| Offline map source/package | Determines coverage, storage, and licensing | Selected source, package process, attribution and update process |
+  1060→| Data retention | Limits risk from sensitive survivor records | Retention periods, deletion/export permissions and backup policy |
+  1061→| Backup target | Protects against SD card/Pi failure | Scheduled backup destination and tested restore procedure |
+  1062→| Performance target | Gives a measurable acceptance standard | Test hardware, node count, workload, thresholds and results |
+  1063→
+  1064→---
+  1065→
+  1066→## 20. Practical first implementation checklist
+  1067→
+  1068→Use this checklist in the order shown. Avoid starting with animations, complex charts, or decorative dashboard cards before the data path works.
+  1069→
+  1070→- [ ] Create the repository and record the chosen hardware/network topology.
+  1071→- [ ] Set up a repeatable development environment and dependency lockfiles.
+  1072→- [ ] Create FastAPI `/api/v1/health` and SQLite migrations.
+  1073→- [ ] Define typed API schemas and the node capability schema.
+  1074→- [ ] Implement local login, roles, and audit events.
+  1075→- [ ] Implement node registration and heartbeat updates.
+  1076→- [ ] Implement incident creation, idempotency, state transitions, and history.
+  1077→- [ ] Build the React app shell and API client.
+  1078→- [ ] Build Node List, Node Details, and Incident Queue pages.
+  1079→- [ ] Implement WebSocket updates and reconnect reconciliation.
+  1080→- [ ] Connect a simulated node and a simulated survivor report before using real hardware.
+  1081→- [ ] Connect one physical ESP32 using the selected transport.
+  1082→- [ ] Test the portal on real phones, especially geolocation and local API access.
+  1083→- [ ] Add offline map data and verify that no essential assets require public internet.
+  1084→- [ ] Test outages, queue recovery, duplicate messages, backups, and permissions.
+  1085→- [ ] Document exactly what has been tested and what remains unverified.
+  1086→
+  1087→## Final recommendation
+  1088→
+  1089→The first milestone should be deliberately small: **one authenticated operator, one registered ESP32 node, one working node-to-Pi path, one persisted SOS record, and one live dashboard update**. Once this works reliably under link loss and recovery, extend the same patterns to modules, mapping, messaging, resources, and reports.
+  1090→
+  1091→ResQNet should display only what its hardware and software can actually verify. Clear distinctions between current and stale data, approximate and precise location, queued and delivered messages, and absent and unknown capabilities are core functional requirements—not optional UI polish.
+  1092→

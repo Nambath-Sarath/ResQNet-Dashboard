@@ -1,0 +1,430 @@
+// ResQNet — Prisma schema (SQLite)
+// Local-first disaster response & resource coordination platform.
+// Spec: ResQNet_Command_Dashboard_Specification.md
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Operators & auth
+// ---------------------------------------------------------------------------
+
+enum OperatorRole {
+  VIEWER
+  DISPATCHER
+  FIELD_COORDINATOR
+  NODE_TECHNICIAN
+  ADMINISTRATOR
+}
+
+model Operator {
+  id            String        @id @default(cuid())
+  username      String        @unique
+  display_name  String
+  password_hash String
+  role          OperatorRole  @default(VIEWER)
+  active        Boolean       @default(true)
+  created_at    DateTime      @default(now())
+  updated_at    DateTime      @updatedAt
+
+  incidents_assigned Incident[]     @relation("IncidentAssignee")
+  audit_entries      AuditLog[]     @relation("AuditActor")
+  resource_updates   Resource[]     @relation("ResourceUpdater")
+  incident_notes     IncidentNote[] @relation("IncidentNoteAuthor")
+  sessions           OperatorSession[]
+
+  @@index([role])
+}
+
+model OperatorSession {
+  id           String   @id @default(cuid())
+  operator_id  String
+  token        String   @unique
+  created_at   DateTime @default(now())
+  expires_at   DateTime
+  user_agent   String?
+  ip_addr      String?
+
+  operator Operator @relation(fields: [operator_id], references: [id], onDelete: Cascade)
+
+  @@index([operator_id])
+  @@index([expires_at])
+}
+
+// ---------------------------------------------------------------------------
+// Nodes & capabilities
+// ---------------------------------------------------------------------------
+
+enum NodeLifecycle {
+  REGISTERED
+  DEPLOYED
+  MAINTENANCE
+  RETIRED
+}
+
+model Node {
+  id                  String        @id
+  display_name        String
+  hardware_revision   String?
+  firmware_version    String?
+  protocol_version    String?
+  auth_secret         String        // per-node secret; never returned to browser
+  lifecycle_state     NodeLifecycle @default(REGISTERED)
+  deployment_lat      Float?
+  deployment_lon      Float?
+  deployment_locked_by String?
+  deployment_locked_at DateTime?
+  deployment_accuracy_m Float?
+  created_at          DateTime      @default(now())
+  updated_at          DateTime      @updatedAt
+
+  heartbeats        NodeHeartbeat[]
+  locations         NodeLocation[]
+  capability_reports CapabilityReport[]
+  modules           Module[]
+  node_events       NodeEvent[]
+  incidents_sourced Incident[]     @relation("IncidentSourceNode")
+
+  @@index([lifecycle_state])
+}
+
+model NodeHeartbeat {
+  id                 String   @id @default(cuid())
+  node_id            String
+  received_at        DateTime @default(now())
+  node_reported_at   DateTime
+  battery            Float?   // 0..100 percent
+  supply_voltage     Float?   // volts
+  link_quality       Float?   // 0..100
+  uptime_seconds     Int?
+  health_state       String   @default("OK") // OK | DEGRADED | FAULT | UNKNOWN
+  connected_clients  Int?
+  rssi               Int?
+
+  node Node @relation(fields: [node_id], references: [id], onDelete: Cascade)
+
+  @@index([node_id, received_at])
+}
+
+model NodeLocation {
+  id          String   @id @default(cuid())
+  node_id     String
+  latitude    Float
+  longitude   Float
+  accuracy_m  Float?
+  source      String   // GPS_MODULE | MANUAL | DEPLOYMENT_REF | APPROXIMATE
+  captured_at DateTime
+  received_at DateTime @default(now())
+  valid       Boolean  @default(true)
+
+  node Node @relation(fields: [node_id], references: [id], onDelete: Cascade)
+
+  @@index([node_id, captured_at])
+}
+
+model CapabilityReport {
+  id              String   @id @default(cuid())
+  node_id         String
+  protocol_version String
+  firmware_version String?
+  hardware_revision String?
+  descriptor_json String   // validated JSON string (SQLite has no native JSON)
+  valid           Boolean  @default(true)
+  error_code      String?
+  received_at     DateTime @default(now())
+
+  node Node @relation(fields: [node_id], references: [id], onDelete: Cascade)
+
+  @@index([node_id, received_at])
+}
+
+enum ModuleStatus {
+  PRESENT_ONLINE
+  PRESENT_DEGRADED
+  PRESENT_OFFLINE
+  NOT_DETECTED
+  UNKNOWN
+}
+
+model Module {
+  id              String       @id @default(cuid())
+  node_id         String
+  module_id       String       // hardware id reported by node
+  module_type     String       // GPS | CAMERA | IMU | ENVIRONMENT | LORA | etc.
+  status          ModuleStatus @default(UNKNOWN)
+  capabilities    String       // comma-separated capability tokens
+  firmware_version String?
+  last_seen_at    DateTime?
+
+  node Node @relation(fields: [node_id], references: [id], onDelete: Cascade)
+
+  @@unique([node_id, module_id])
+  @@index([node_id])
+}
+
+model NodeEvent {
+  id          String   @id @default(cuid())
+  node_id     String
+  event_type  String   // boot | reconnect | disconnect | warning | sensor_fault | movement | displacement
+  severity    String   @default("info") // info | warning | critical
+  payload     String?
+  occurred_at DateTime @default(now())
+
+  node Node @relation(fields: [node_id], references: [id], onDelete: Cascade)
+
+  @@index([node_id, occurred_at])
+}
+
+// ---------------------------------------------------------------------------
+// Incidents & survivors
+// ---------------------------------------------------------------------------
+
+enum IncidentStatus {
+  NEW
+  ACKNOWLEDGED
+  ASSIGNED
+  IN_PROGRESS
+  RESOLVED
+  CANCELLED
+  DUPLICATE
+}
+
+enum IncidentPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum IncidentCategory {
+  RESCUE
+  MEDICAL
+  FIRE
+  FLOOD
+  STRUCTURE
+  SUPPLY
+  COMMUNICATION
+  OTHER
+}
+
+model Incident {
+  id                    String           @id
+  client_submission_id  String?
+  category              IncidentCategory
+  priority              IncidentPriority @default(MEDIUM)
+  status                IncidentStatus   @default(NEW)
+  description           String
+  people_affected       Int?
+  source_type           String           @default("survivor_portal") // survivor_portal | operator | node | import
+  source_node_id        String?
+  location_lat          Float?
+  location_lon          Float?
+  location_source       String?          // BROWSER_GNSS | NODE_GPS | MANUAL | APPROXIMATE
+  location_accuracy_m   Float?
+  location_captured_at  DateTime?
+  created_at            DateTime         @default(now())
+  acknowledged_at       DateTime?
+  assigned_at           DateTime?
+  resolved_at           DateTime?
+  updated_at            DateTime         @updatedAt
+  assigned_to_id        String?
+  related_incident_id   String?
+
+  events     IncidentEvent[]
+  notes      IncidentNote[]
+  assignee   Operator?     @relation("IncidentAssignee", fields: [assigned_to_id], references: [id])
+  source_node Node?        @relation("IncidentSourceNode", fields: [source_node_id], references: [id])
+
+  @@unique([source_node_id, client_submission_id])
+  @@index([status])
+  @@index([priority])
+  @@index([created_at])
+  @@index([assigned_to_id])
+}
+
+model IncidentEvent {
+  id          String   @id @default(cuid())
+  incident_id String
+  event_type  String   // created | acknowledged | assigned | status_changed | note_added | priority_changed | resolved | cancelled
+  old_value   String?
+  new_value   String?
+  actor_type  String   @default("operator") // operator | system | node | survivor
+  actor_id    String?
+  note        String?
+  created_at  DateTime @default(now())
+
+  incident Incident @relation(fields: [incident_id], references: [id], onDelete: Cascade)
+
+  @@index([incident_id, created_at])
+}
+
+model IncidentNote {
+  id          String   @id @default(cuid())
+  incident_id String
+  body        String
+  author_id   String?
+  created_at  DateTime @default(now())
+
+  incident Incident  @relation(fields: [incident_id], references: [id], onDelete: Cascade)
+  author   Operator? @relation("IncidentNoteAuthor", fields: [author_id], references: [id])
+
+  @@index([incident_id, created_at])
+}
+
+model Survivor {
+  id                String   @id @default(cuid())
+  temporary_ref     String   @unique
+  display_name      String?
+  contact           String?
+  first_seen_at     DateTime @default(now())
+  last_seen_at      DateTime @default(now())
+  status            String   @default("active") // active | rescued | missing | closed
+  location_lat      Float?
+  location_lon      Float?
+  location_source   String?
+  notes             String?
+
+  @@index([status])
+  @@index([last_seen_at])
+}
+
+// ---------------------------------------------------------------------------
+// Messaging
+// ---------------------------------------------------------------------------
+
+enum MessageStatus {
+  CREATED
+  ACCEPTED_BY_GATEWAY
+  QUEUED_FOR_NODE
+  FORWARDED
+  ACKNOWLEDGED
+  FAILED
+  EXPIRED
+}
+
+model Message {
+  id               String        @id @default(cuid())
+  source           String        // operator_id | node_id | "system"
+  destination      String        // node_id | "broadcast" | operator_id
+  message_type     String        @default("text") // text | alert | broadcast | ack
+  body             String
+  status           MessageStatus @default(CREATED)
+  created_at       DateTime      @default(now())
+  accepted_at      DateTime?
+  forwarded_at     DateTime?
+  acknowledged_at  DateTime?
+  expires_at       DateTime?
+  failure_reason   String?
+
+  attempts         MessageAttempt[]
+
+  @@index([status])
+  @@index([destination])
+  @@index([created_at])
+}
+
+model MessageAttempt {
+  id           String   @id @default(cuid())
+  message_id   String
+  attempted_at DateTime @default(now())
+  outcome      String   // success | failed | timeout
+  error_code   String?
+
+  message Message @relation(fields: [message_id], references: [id], onDelete: Cascade)
+
+  @@index([message_id])
+}
+
+// ---------------------------------------------------------------------------
+// Resources & shelters
+// ---------------------------------------------------------------------------
+
+model Resource {
+  id               String   @id @default(cuid())
+  resource_type    String   // water | food | medical_kit | blanket | fuel | etc.
+  unit             String   // litres | kg | kits | units
+  quantity         Float
+  reserved_quantity Float    @default(0)
+  location_label   String?
+  location_lat     Float?
+  location_lon     Float?
+  updated_at       DateTime @default(now())
+  updated_by_id    String?
+
+  updater Operator? @relation("ResourceUpdater", fields: [updated_by_id], references: [id])
+
+  requests ResourceRequest[]
+
+  @@index([resource_type])
+}
+
+model ResourceRequest {
+  id            String   @id @default(cuid())
+  resource_id   String?
+  resource_type String
+  unit          String
+  quantity      Float
+  status        String   @default("OPEN") // OPEN | APPROVED | FULFILLED | DENIED
+  requested_by  String?
+  notes         String?
+  created_at    DateTime @default(now())
+  fulfilled_at  DateTime?
+
+  resource Resource? @relation(fields: [resource_id], references: [id])
+
+  @@index([status])
+}
+
+model Shelter {
+  id                String   @id @default(cuid())
+  name              String
+  latitude          Float
+  longitude         Float
+  capacity          Int
+  occupancy_estimate Int     @default(0)
+  status            String   @default("OPEN") // OPEN | FULL | CLOSED | EVACUATING
+  updated_at        DateTime @default(now())
+  updated_by        String?
+
+  @@index([status])
+}
+
+// ---------------------------------------------------------------------------
+// Audit & system events
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id           String   @id @default(cuid())
+  actor_type   String   @default("operator") // operator | system | node
+  actor_id     String?
+  action       String
+  entity_type  String?
+  entity_id    String?
+  timestamp     DateTime @default(now())
+  metadata     String?   // JSON string
+
+  operator Operator? @relation("AuditActor", fields: [actor_id], references: [id])
+
+  @@index([actor_id])
+  @@index([entity_type, entity_id])
+  @@index([timestamp])
+}
+
+model SystemEvent {
+  id           String   @id @default(cuid())
+  event_type   String
+  severity     String   @default("info") // info | warning | critical
+  entity_type  String?
+  entity_id    String?
+  payload      String?
+  occurred_at  DateTime @default(now())
+
+  @@index([severity])
+  @@index([occurred_at])
+}
