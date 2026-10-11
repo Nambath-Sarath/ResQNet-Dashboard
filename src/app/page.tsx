@@ -44,11 +44,22 @@ export default function Home() {
     return <LoadingState message="Connecting to gateway…" className="min-h-screen" />
   }
 
-  // The server auth response is the source of truth.
-  // If auth?.authenticated is explicitly false, show login (ignore stale store user).
-  // If auth is still loading but we have a store user, show the dashboard optimistically
-  // (the auth check will re-verify in the background).
-  const authenticated = auth?.authenticated === true || (!auth && !!user)
+  // Auth state priority:
+  // 1. If the server explicitly says authenticated: true → show dashboard
+  // 2. If the server explicitly says authenticated: false → show login (session expired)
+  // 3. If auth is still loading/refetching → trust the store user (optimistic)
+  //    This handles the brief gap during login when useAuth is refetching.
+  let authenticated: boolean
+  if (auth?.authenticated === true) {
+    authenticated = true
+  } else if (auth?.authenticated === false) {
+    // Server confirmed not authenticated — but if we have a store user AND
+    // auth is loading (refetching), give it a chance before kicking to login.
+    authenticated = isLoading && !!user ? true : false
+  } else {
+    // auth is undefined (first load) — trust store user
+    authenticated = !!user
+  }
 
   if (!authenticated) {
     return <LoginPage />

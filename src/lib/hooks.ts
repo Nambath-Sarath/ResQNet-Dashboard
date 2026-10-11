@@ -36,6 +36,14 @@ export function useLogin() {
       api.post<LoginResponse>('/api/v1/auth/login', vars),
     onSuccess: (data) => {
       setUser(data.user)
+      // Immediately set the auth cache so the page transitions to the dashboard
+      // without waiting for the /auth/me refetch (which would otherwise briefly
+      // show the login page again if the previous cache was {authenticated: false}).
+      qc.setQueryData(['auth', 'me'], {
+        authenticated: true,
+        user: data.user,
+        active_sessions: 1,
+      })
       qc.invalidateQueries({ queryKey: ['auth', 'me'] })
       qc.invalidateQueries({ queryKey: ['overview'] })
     },
