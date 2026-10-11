@@ -350,3 +350,198 @@ export function useNodeSecret(nodeId: string | null) {
     enabled: !!nodeId,
   })
 }
+
+// --- Survivors ---------------------------------------------------------------
+
+export function useSurvivors(filters?: { status?: string; q?: string }) {
+  const params = new URLSearchParams()
+  if (filters?.status) params.set('status', filters.status)
+  if (filters?.q) params.set('q', filters.q)
+  const qs = params.toString()
+  return useQuery<{ survivors: Array<{ id: string; temporary_ref: string; display_name: string | null; contact: string | null; first_seen_at: string; last_seen_at: string; status: string; location_lat: number | null; location_lon: number | null; location_source: string | null; notes: string | null }>; total: number; can_see_contact: boolean }>({
+    queryKey: ['survivors', filters],
+    queryFn: () => api.get(`/api/v1/survivors${qs ? `?${qs}` : ''}`),
+    refetchInterval: 30_000,
+  })
+}
+
+// --- Messages ----------------------------------------------------------------
+
+export function useMessages(filters?: { status?: string; destination?: string; q?: string }) {
+  const params = new URLSearchParams()
+  if (filters?.status) params.set('status', filters.status)
+  if (filters?.destination) params.set('destination', filters.destination)
+  if (filters?.q) params.set('q', filters.q)
+  const qs = params.toString()
+  return useQuery<{ messages: Array<{ id: string; source: string; destination: string; message_type: string; body: string; status: string; created_at: string; accepted_at: string | null; forwarded_at: string | null; acknowledged_at: string | null; expires_at: string | null; failure_reason: string | null; attempts: Array<{ id: string; attempted_at: string; outcome: string; error_code: string | null }> }>; total: number }>({
+    queryKey: ['messages', filters],
+    queryFn: () => api.get(`/api/v1/messages${qs ? `?${qs}` : ''}`),
+    refetchInterval: 20_000,
+  })
+}
+
+export function useCreateMessage() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: { destination: string; body: string; message_type?: string; ttl_seconds?: number }) =>
+      api.post<{ message_id: string }>('/api/v1/messages', data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['messages'] })
+    },
+  })
+}
+
+// --- Resources ---------------------------------------------------------------
+
+export function useResources(filters?: { type?: string }) {
+  const params = new URLSearchParams()
+  if (filters?.type) params.set('type', filters.type)
+  const qs = params.toString()
+  return useQuery<{ resources: Array<{ id: string; resource_type: string; unit: string; quantity: number; reserved_quantity: number; available_quantity: number; low_stock: boolean; location_label: string | null; location_lat: number | null; location_lon: number | null; updated_at: string; updated_by_id: string | null }>; total: number; low_stock_count: number }>({
+    queryKey: ['resources', filters],
+    queryFn: () => api.get(`/api/v1/resources${qs ? `?${qs}` : ''}`),
+    refetchInterval: 30_000,
+  })
+}
+
+export function useUpdateResource() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: { resource_type: string; unit: string; quantity: number; location_label?: string; location_lat?: number; location_lon?: number }) =>
+      api.post<{ resource: { id: string } }>('/api/v1/resources', data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['resources'] })
+    },
+  })
+}
+
+export function useResourceRequests() {
+  return useQuery({
+    queryKey: ['resource-requests'],
+    queryFn: () => api.get<{ requests: Array<{ id: string; resource_type: string; unit: string; quantity: number; status: string; requested_by: string | null; notes: string | null; created_at: string; fulfilled_at: string | null; resource: { id: string; resource_type: string; unit: string; quantity: number } | null }>; total: number }>('/api/v1/resources/requests'),
+    refetchInterval: 30_000,
+  })
+}
+
+export function useCreateResourceRequest() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: { resource_type: string; unit: string; quantity: number; notes?: string }) =>
+      api.post<{ request: { id: string } }>('/api/v1/resources/requests', data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['resource-requests'] })
+    },
+  })
+}
+
+// --- Shelters ----------------------------------------------------------------
+
+export function useShelters() {
+  return useQuery<{ shelters: Array<{ id: string; name: string; latitude: number; longitude: number; capacity: number; occupancy_estimate: number; occupancy_pct: number; is_full: boolean; nearly_full: boolean; status: string; updated_at: string; updated_by: string | null }>; total: number; total_capacity: number; total_occupancy: number }>({
+    queryKey: ['shelters'],
+    queryFn: () => api.get('/api/v1/shelters'),
+    refetchInterval: 30_000,
+  })
+}
+
+export function useUpdateShelter() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: { name: string; latitude: number; longitude: number; capacity: number; occupancy_estimate?: number; status?: string }) =>
+      api.post<{ shelter: { id: string } }>('/api/v1/shelters', data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['shelters'] })
+    },
+  })
+}
+
+// --- Reports -----------------------------------------------------------------
+
+export function useIncidentReport(since?: string) {
+  const params = new URLSearchParams()
+  if (since) params.set('since', since)
+  params.set('format', 'json')
+  const qs = params.toString()
+  return useQuery<{ summary: { total: number; by_category: Record<string, number>; by_status: Record<string, number>; by_priority: Record<string, number>; avg_ack_seconds: number | null; avg_assign_seconds: number | null; avg_resolve_seconds: number | null; max_resolve_seconds: number | null; min_resolve_seconds: number | null; since: string; generated_at: string }; incidents: Array<{ id: string; created_at: string; category: string; priority: string; status: string; people_affected: number | null; acknowledged_at: string | null; assigned_at: string | null; resolved_at: string | null; assignee: string | null; source_node: string | null; description: string; ack_seconds: number | null; resolve_seconds: number | null }> }>({
+    queryKey: ['report-incidents', since],
+    queryFn: () => api.get(`/api/v1/reports/incidents?${qs}`),
+    refetchInterval: 60_000,
+  })
+}
+
+/** Trigger a CSV download in the browser. */
+export function downloadIncidentCsv(since?: string) {
+  const params = new URLSearchParams()
+  if (since) params.set('since', since)
+  params.set('format', 'csv')
+  const qs = params.toString()
+  // Use a direct navigation to trigger the download with cookies
+  window.open(`/api/v1/reports/incidents?${qs}`, '_blank')
+}
+
+// --- Audit log ---------------------------------------------------------------
+
+export function useAuditLogs(filters?: { action?: string; entity_type?: string; actor_id?: string; since?: string }) {
+  const params = new URLSearchParams()
+  if (filters?.action) params.set('action', filters.action)
+  if (filters?.entity_type) params.set('entity_type', filters.entity_type)
+  if (filters?.actor_id) params.set('actor_id', filters.actor_id)
+  if (filters?.since) params.set('since', filters.since)
+  const qs = params.toString()
+  return useQuery<{ logs: Array<{ id: string; actor_type: string; actor_id: string | null; action: string; entity_type: string | null; entity_id: string | null; timestamp: string; metadata: string | null }>; total: number; viewer: { id: string; role: string } }>({
+    queryKey: ['audit-logs', filters],
+    queryFn: () => api.get(`/api/v1/audit-logs?${qs}`),
+    refetchInterval: 30_000,
+  })
+}
+
+// --- Operators (settings) ----------------------------------------------------
+
+export function useOperators() {
+  return useQuery<{ operators: Array<{ id: string; username: string; display_name: string; role: string; active: boolean; created_at: string; updated_at: string; active_sessions: number }> }>({
+    queryKey: ['operators'],
+    queryFn: () => api.get('/api/v1/operators'),
+    refetchInterval: 60_000,
+  })
+}
+
+export function useCreateOperator() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: { username: string; display_name: string; password: string; role: string }) =>
+      api.post<{ id: string }>('/api/v1/operators', data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['operators'] })
+    },
+  })
+}
+
+// --- Settings thresholds -----------------------------------------------------
+
+export function useThresholds() {
+  return useQuery<{ thresholds: Record<string, number>; build_version: string }>({
+    queryKey: ['thresholds'],
+    queryFn: () => api.get('/api/v1/settings/thresholds'),
+    refetchInterval: 300_000,
+  })
+}
+
+// --- Map data ----------------------------------------------------------------
+
+export function useMapData(layers?: string) {
+  const params = new URLSearchParams()
+  if (layers) params.set('layers', layers)
+  const qs = params.toString()
+  return useQuery<{
+    nodes?: Array<{ id: string; display_name: string; lifecycle_state: string; deployment_lat: number | null; deployment_lon: number | null; deployment_accuracy_m: number | null; live_lat: number | null; live_lon: number | null; live_accuracy_m: number | null; live_captured_at: string | null; online: boolean; battery: number | null; health_state: string; runtime_state: string }>
+    incidents?: Array<{ id: string; category: string; priority: string; status: string; description: string; people_affected: number | null; created_at: string; location_lat: number; location_lon: number; location_accuracy_m: number | null; location_source: string | null; location_captured_at: string | null }>
+    survivors?: Array<{ id: string; temporary_ref: string; status: string; location_lat: number; location_lon: number; location_source: string | null; last_seen_at: string }>
+    shelters?: Array<{ id: string; name: string; latitude: number; longitude: number; capacity: number; occupancy_estimate: number; status: string }>
+    generated_at: string
+    freshness: { last_updated_at: string; stale: boolean }
+  }>({
+    queryKey: ['map', layers],
+    queryFn: () => api.get(`/api/v1/map${qs ? `?${qs}` : ''}`),
+    refetchInterval: 20_000,
+  })
+}

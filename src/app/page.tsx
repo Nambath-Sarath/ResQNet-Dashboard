@@ -9,7 +9,14 @@ import { NodeListPage } from '@/components/pages/node-list-page'
 import { NodeDetailPage } from '@/components/pages/node-detail-page'
 import { IncidentQueuePage } from '@/components/pages/incident-queue-page'
 import { IncidentDetailPage } from '@/components/pages/incident-detail-page'
-import { ComingSoon } from '@/components/pages/coming-soon'
+import { SituationMapPage } from '@/components/pages/situation-map-page'
+import { SurvivorRegistryPage } from '@/components/pages/survivor-registry-page'
+import { MessagesPage } from '@/components/pages/messages-page'
+import { ResourcesPage } from '@/components/pages/resources-page'
+import { SheltersPage } from '@/components/pages/shelters-page'
+import { ReportsPage } from '@/components/pages/reports-page'
+import { AuditLogPage } from '@/components/pages/audit-log-page'
+import { SettingsPage } from '@/components/pages/settings-page'
 import { LoadingState } from '@/components/shared/state-views'
 import { useEffect } from 'react'
 
@@ -41,19 +48,19 @@ export default function Home() {
   return (
     <DashboardShell>
       {view.name === 'overview' && <OverviewPage />}
-      {view.name === 'map' && <ComingSoon view={view} />}
+      {view.name === 'map' && <SituationMapPage />}
       {view.name === 'incidents' && <IncidentQueuePage />}
       {view.name === 'incident' && <IncidentDetailPage incidentId={view.incidentId} />}
-      {view.name === 'survivors' && <ComingSoon view={view} />}
+      {view.name === 'survivors' && <SurvivorRegistryPage />}
       {view.name === 'nodes' && <NodeListPage />}
       {view.name === 'node' && <NodeDetailPage nodeId={view.nodeId} />}
-      {view.name === 'modules' && <ComingSoon view={view} />}
-      {view.name === 'messages' && <ComingSoon view={view} />}
-      {view.name === 'resources' && <ComingSoon view={view} />}
-      {view.name === 'shelters' && <ComingSoon view={view} />}
-      {view.name === 'reports' && <ComingSoon view={view} />}
-      {view.name === 'audit' && <ComingSoon view={view} />}
-      {view.name === 'settings' && <ComingSoon view={view} />}
+      {view.name === 'modules' && <SituationMapPage />}
+      {view.name === 'messages' && <MessagesPage />}
+      {view.name === 'resources' && <ResourcesPage />}
+      {view.name === 'shelters' && <SheltersPage />}
+      {view.name === 'reports' && <ReportsPage />}
+      {view.name === 'audit' && <AuditLogPage />}
+      {view.name === 'settings' && <SettingsPage />}
     </DashboardShell>
   )
 }

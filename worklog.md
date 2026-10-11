@@ -101,3 +101,55 @@ Stage Summary:
 - The realtime pipeline is fully circular: dashboard action → API → DB → publish → socket.io → all dashboards update via cache invalidation + toast.
 - Next stage (Stage 3) will add: Leaflet situation map, survivor registry, messages, resources, shelters, reports, audit log, settings pages (currently Coming Soon placeholders).
 - Unresolved notes: the socket.io connection only works when the dashboard is accessed through the Caddy gateway (port 81) — direct localhost:3000 access times out because the `?XTransformPort=3003` query isn't forwarded. This is expected behavior. The dev server + realtime mini-service both need to be running (`bun run dev` + `cd mini-services/realtime && bun index.ts`).
+
+---
+Task ID: stage-3
+Agent: main (Z.ai Code) — cron-triggered 15-minute review
+Task: Stage 3 — Phase 5 (Leaflet situation map, survivor registry, messages, resources, shelters, reports, audit log, settings). Plus styling polish + bug fixes.
+
+Work Log:
+- QA pass (Stage 1+2 stable): re-seeded DB, restarted dev server, agent-browser smoke test through Caddy gateway confirmed login → overview → incident detail → node detail all working. Realtime service healthy (4 events buffered, cursor 4).
+- Built 9 new API routes:
+  - `GET /api/v1/survivors` + `/survivors/[id]` — filterable registry with role-based contact-field visibility (spec §6.4 data minimization: viewer/node-technician cannot see names/contacts).
+  - `GET/POST /api/v1/messages` — message history + compose with destination/type/ttl validation (max 4096 chars per spec §6.7), status tracking (ACCEPTED_BY_GATEWAY → QUEUED_FOR_NODE → FORWARDED → ACKNOWLEDGED), realtime event publish.
+  - `GET/POST /api/v1/resources` — inventory with computed available_quantity + low_stock flag (≤20% of total). Upsert by (resource_type, location_label).
+  - `GET/POST /api/v1/resources/requests` — inbound resource requests with OPEN/APPROVED/FULFILLED/DENIED status.
+  - `GET/POST /api/v1/shelters` — shelter list with computed occupancy_pct / is_full / nearly_full. Summary totals (total_capacity, total_occupancy).
+  - `GET /api/v1/reports/incidents` — incident metrics (totals by category/status/priority, avg/min/max ack+assign+resolve durations) + CSV/JSON export (spec §6.9). CSV escapes quotes properly; supports `?format=csv&since=ISO`.
+  - `GET /api/v1/audit-logs` — restricted (admin/dispatcher only) filterable audit history (by action/entity_type/actor_id/since).
+  - `GET/POST /api/v1/operators` — admin-only operator list (excludes password_hash) + create with bcrypt + role validation (min 8 char password).
+  - `GET/PATCH /api/v1/settings/thresholds` — configurable alert bounds (heartbeat_timeout, battery, link, displacement, message_ttl, payload size, session, retention) with safe min/max validation per spec §6.10.
+  - `GET /api/v1/map` — aggregated map markers (nodes with deployment+live, incidents, survivors, shelters) in one call.
+- Added 15 new TanStack Query hooks for all the above (useSurvivors, useMessages+useCreateMessage, useResources+useUpdateResource+useResourceRequests+useCreateResourceRequest, useShelters+useUpdateShelter, useIncidentReport+downloadIncidentCsv, useAuditLogs, useOperators+useCreateOperator, useThresholds, useMapData).
+- Installed leaflet + react-leaflet + @types/leaflet.
+- Built SituationMapPage (`src/components/pages/situation-map-page.tsx`): dynamic-imported LeafletMap (SSR-disabled), 4 layer toggles (nodes/incidents/survivors/shelters), list/table fallback (spec §6.2 "Provide list/table alternatives for operators who cannot use the map"), legend, marker-detail Sheet with "Open full record" navigation, offline-tile simulation toggle.
+- Built LeafletMap (`src/components/pages/leaflet-map.tsx`): ref-based map instance (avoids the broken `_leaflet_id` lookup), custom SVG divIcons per marker kind (square=node, circle=node-live, triangle=incident, diamond=survivor, pentagon=shelter), color-coded by tone, auto-fit bounds, popup with formatted HTML.
+- Built SurvivorRegistryPage: filterable table (status filters + search), role-based contact visibility with an explicit "Hide contact" toggle + an info banner explaining the data-minimization rule to lower-privileged roles.
+- Built MessagesPage: compose dialog (destination/type/body with char counter), status filters, delivery-semantics info banner, per-message attempt history expandable list, status icons + tone badges.
+- Built ResourcesPage: Tabs (Inventory / Requests), low-stock banner, resource cards with progress bars (red ≤20%, amber ≤50%, green), inline quantity update, add/update + request dialogs.
+- Built SheltersPage: summary cards (total/capacity/occupancy/free beds), shelter cards with occupancy progress + status badges + edit dialog, occupancy ≤ capacity validation.
+- Built ReportsPage: time-range selector (24h/7d/30d/90d), 4 summary metric cards, 4 breakdown cards (by category/priority/status with progress bars, durations), full incident records table, CSV + JSON export buttons.
+- Built AuditLogPage: 4 filters (action/entity_type/actor_id/text search), role-restricted (admin/dispatcher only — others see ForbiddenState), timeline with action icons + colored severity, JSON export.
+- Built SettingsPage: 4 tabs (Operators/Thresholds/Gateway/Backup) — Operators tab has full CRUD with role select + password validation, Thresholds tab shows all configurable bounds with disabled inputs for non-admins, Gateway tab shows live API/DB/uptime/server-time/last-backup metrics, Backup tab documents the restore-test requirement (spec §9.2).
+- Wired all 9 new pages into `src/app/page.tsx` (replacing Coming Soon placeholders).
+- Fixed 2 bugs found in QA: (1) CSV export crashed with `TypeError: (s ?? "").replace is not a function` because `people_affected` is a number — fixed the `esc` helper to coerce via `String()`; (2) LeafletMap markers didn't render because the `_leaflet_id` map lookup was broken — rewrote to use proper `useRef<L.Map>` + `useRef<L.LayerGroup>` pattern. Verified: 24 markers + 12 tiles now render on the situation map.
+- Cleaned up 2 unused eslint-disable directives in leaflet-map.tsx.
+
+Verification (agent-browser through Caddy gateway on port 81):
+- ✅ All 13 sidebar nav items present and clickable (Overview, Situation Map, Incidents, Survivors, Nodes, Modules, Messages, Resources, Shelters, Reports, Audit Log, Settings).
+- ✅ Situation Map renders: 24 markers (6 nodes + 10 incidents + 4 survivors + 3 shelters) + 12 OSM tiles, layer toggles work, list fallback shows all markers with coordinates.
+- ✅ Survivor Registry: 4 survivors (SRV-001 R. Kumar/rescued, SRV-003 M. Iyer/active visible to admin; SRV-002/SRV-004 deliberately anonymous with null names). Status filters render.
+- ✅ Messages: status filter bar (All/Accepted/Queued/Forwarded/Acknowledged/Failed/Expired), Compose dialog, seeded messages visible with attempt history.
+- ✅ Resources: inventory cards (water 1200L, food 340 kits, medical_kit 48, blanket 220, fuel 60L) with progress bars + reserved/available split + Shelter Delta location labels.
+- ✅ Shelters: 3 shelters (Shelter Delta 168/200, North Gate Hall 42/120, Pier Warehouse 80/80 FULL) + summary cards (total 400 capacity, 290 occupancy, 110 free).
+- ✅ Reports: 4 metric cards + 4 breakdown charts + incident records table, CSV export returns valid CSV with 12 rows + header.
+- ✅ Audit Log: real entries visible (auth.login, incident.acknowledge, incident.assign, node.disconnect, node.deployment_lock) + operator.create after creating a new operator.
+- ✅ Settings: 4 tabs render, Operators tab shows 6 operators (5 seed + 1 newly created "field2"/Jordan Lee) with role badges + active status + session counts, Thresholds tab shows all 11 configurable bounds, Gateway tab shows live health, Backup tab documents restore-test requirement.
+- ✅ Created new operator "field2" (Jordan Lee, Field Coordinator) via Settings → Add operator dialog → toast "Operator field2 created." → appears in table → `operator.create` entry appears in Audit Log.
+- ✅ `bun run lint` clean (0 errors). No console errors. No dev-log errors.
+
+Stage Summary:
+- Stage 3 is feature-complete and browser-verified. All spec §6.2–§6.10 + §6.9 reports + §6.10 settings pages are implemented with real API routes, role-based access, and audit trails. The dashboard now covers all 13 navigation items in the spec §5 route hierarchy (the only remaining "Coming Soon" is the Modules cross-node view, which redirects to the Situation Map for now).
+- CSV/JSON exports work end-to-end (spec §6.9). Audit log records every state-changing operator action including the new operator.create (spec §13).
+- Next stage (Stage 4) will add: Phase 6 resilience — stale-data banner hardening, offline-mode UX, simulated node queue + duplicate handling, backup/restore surface (currently buttons are disabled), clock-drift indicators, and a field-test checklist (spec §16.4).
+- Unresolved notes: the realtime socket connection still requires the Caddy gateway (port 81) — direct localhost:3000 access times out for socket.io. All API routes work on both ports. The dev server + realtime mini-service must both be running.
