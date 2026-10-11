@@ -98,8 +98,17 @@ export function DuplicateDetectionCard({ incidentId }: Props) {
               const confTone = dup.confidence >= 70 ? 'danger' : dup.confidence >= 50 ? 'warning' : 'muted'
               return (
                 <li key={dup.incident_id}>
-                  <button
+                  <div
+                    role="button"
+                    tabIndex={0}
                     onClick={() => setView({ name: 'incident', incidentId: dup.incident_id })}
+                    onKeyDown={(e) => {
+                      if (e.target !== e.currentTarget) return
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        setView({ name: 'incident', incidentId: dup.incident_id })
+                      }
+                    }}
                     className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/50"
                   >
                     {/* Confidence gauge */}
@@ -174,7 +183,7 @@ export function DuplicateDetectionCard({ incidentId }: Props) {
                       </button>
                       <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground" />
                     </div>
-                  </button>
+                  </div>
                 </li>
               )
             })}
