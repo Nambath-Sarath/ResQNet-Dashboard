@@ -61,6 +61,7 @@ const NAV_SECTIONS: { title: string; items: NavItem[] }[] = [
     items: [
       { view: { name: 'reports' }, label: 'Reports', icon: FileBarChart, match: (v) => v.name === 'reports' },
       { view: { name: 'audit' }, label: 'Audit Log', icon: ShieldAlert, match: (v) => v.name === 'audit' },
+      { view: { name: 'resilience' }, label: 'Resilience', icon: ShieldCheck, match: (v) => v.name === 'resilience' },
       { view: { name: 'settings' }, label: 'Settings', icon: Settings, match: (v) => v.name === 'settings' },
     ],
   },

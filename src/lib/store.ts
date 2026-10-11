@@ -19,6 +19,7 @@ export type DashboardView =
   | { name: 'reports' }
   | { name: 'audit' }
   | { name: 'settings' }
+  | { name: 'resilience' }
 
 type ConnectionState = 'connected' | 'reconnecting' | 'offline'
 

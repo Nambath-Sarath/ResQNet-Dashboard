@@ -6,13 +6,17 @@ import { TopBar } from './topbar'
 import { ConnectionBanner } from './connection-banner'
 import { Footer } from './footer'
 import { useRealtime } from '@/lib/use-realtime'
+import { useNetworkMonitor } from '@/lib/use-network-monitor'
 import { RealtimeEventFeedButton } from './realtime-feed'
+import { OfflineBanner } from './offline-banner'
 import { useEffect } from 'react'
 import type { ReactNode } from 'react'
 
 export function DashboardShell({ children }: { children: ReactNode }) {
   // Activate the socket.io connection while the dashboard is mounted.
   const { status, recentEvents, operatorsOnline } = useRealtime()
+  // Activate the network monitor + offline write-queue replay engine.
+  useNetworkMonitor()
 
   // Expose realtime status globally for the topbar/footer to read without prop drilling
   useEffect(() => {
@@ -22,7 +26,6 @@ export function DashboardShell({ children }: { children: ReactNode }) {
         recentEvents,
         operatorsOnline,
       }
-      // Dispatch a custom event so listeners can update
       window.dispatchEvent(new CustomEvent('resqnet:rt', { detail: { status, recentEvents, operatorsOnline } }))
     }
   }, [status, recentEvents, operatorsOnline])
@@ -33,6 +36,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
         <Sidebar />
         <MobileNav />
         <div className="flex min-w-0 flex-1 flex-col">
+          <OfflineBanner />
           <ConnectionBanner />
           <TopBar />
           <RealtimeEventFeedButton />

@@ -17,6 +17,7 @@ import { SheltersPage } from '@/components/pages/shelters-page'
 import { ReportsPage } from '@/components/pages/reports-page'
 import { AuditLogPage } from '@/components/pages/audit-log-page'
 import { SettingsPage } from '@/components/pages/settings-page'
+import { ResiliencePage } from '@/components/pages/resilience-page'
 import { LoadingState } from '@/components/shared/state-views'
 import { useEffect } from 'react'
 
@@ -60,6 +61,7 @@ export default function Home() {
       {view.name === 'shelters' && <SheltersPage />}
       {view.name === 'reports' && <ReportsPage />}
       {view.name === 'audit' && <AuditLogPage />}
+      {view.name === 'resilience' && <ResiliencePage />}
       {view.name === 'settings' && <SettingsPage />}
     </DashboardShell>
   )

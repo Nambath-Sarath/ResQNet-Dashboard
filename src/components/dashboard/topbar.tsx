@@ -26,6 +26,7 @@ import {
 import { useTheme } from 'next-themes'
 import { StatusBadge } from '@/components/shared/status-badge'
 import { FreshnessLabel } from '@/components/shared/freshness-label'
+import { ResilienceStatusPill } from '@/components/dashboard/resilience-status'
 import { formatDateTime, titleCase } from '@/lib/format'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 
@@ -117,6 +118,9 @@ export function TopBar() {
             </span>
           </div>
         )}
+
+        {/* Resilience status (network + write-queue) */}
+        <ResilienceStatusPill />
 
         {/* Refresh */}
         <Button

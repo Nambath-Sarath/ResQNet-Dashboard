@@ -51,6 +51,7 @@ const NAV_SECTIONS: { title: string; items: { view: DashboardView; label: string
     items: [
       { view: { name: 'reports' }, label: 'Reports', icon: FileBarChart },
       { view: { name: 'audit' }, label: 'Audit Log', icon: ShieldAlert },
+      { view: { name: 'resilience' }, label: 'Resilience', icon: ShieldCheck },
       { view: { name: 'settings' }, label: 'Settings', icon: Settings },
     ],
   },

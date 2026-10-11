@@ -545,3 +545,124 @@ export function useMapData(layers?: string) {
     refetchInterval: 20_000,
   })
 }
+
+// --- Stage 4: Resilience / system ------------------------------------------
+
+export function useNodeQueue(nodeId: string | null) {
+  return useQuery<{
+    node_id: string
+    queue_size: number
+    queue_limit: number
+    overflow_policy: string
+    queued: Array<{ id: string; source: string; destination: string; body: string; status: string; created_at: string; expires_at: string | null }>
+    expired_count: number
+    expired: Array<{ id: string; source: string; destination: string; body: string; status: string; created_at: string }>
+    note: string
+  }>({
+    queryKey: ['node-queue', nodeId],
+    queryFn: () => {
+      if (!nodeId) throw new Error('no nodeId')
+      return api.get(`/api/v1/nodes/${nodeId}/queue`)
+    },
+    enabled: !!nodeId,
+    refetchInterval: 15_000,
+  })
+}
+
+export function useReplayNodeQueue() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ nodeId, mode }: { nodeId: string; mode: 'replay' | 'expire' }) =>
+      api.post<{ forwarded?: number; duplicates?: number; expired?: number; note?: string }>(`/api/v1/nodes/${nodeId}/queue`, { mode }),
+    onSuccess: (_d, { nodeId }) => {
+      qc.invalidateQueries({ queryKey: ['node-queue', nodeId] })
+      qc.invalidateQueries({ queryKey: ['messages'] })
+      qc.invalidateQueries({ queryKey: ['overview'] })
+    },
+  })
+}
+
+export function useBackups() {
+  return useQuery<{
+    backups: Array<{ id: string; name: string; size: number; created_at: string }>
+    total: number
+    last_backup_at: string | null
+    backup_dir: string
+    note: string
+  }>({
+    queryKey: ['backups'],
+    queryFn: () => api.get('/api/v1/system/backup'),
+    refetchInterval: 60_000,
+  })
+}
+
+export function useCreateBackup() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => api.post<{ backup_id: string; name: string; size_bytes: number }>('/api/v1/system/backup'),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['backups'] })
+      qc.invalidateQueries({ queryKey: ['overview'] })
+    },
+  })
+}
+
+export function useTestRestore() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (backupId: string) =>
+      api.post<{ verified: boolean; size_bytes: number; readable: boolean }>(`/api/v1/system/backup?test=true&id=${backupId}`, {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['backups'] })
+    },
+  })
+}
+
+export function useDeleteBackup() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (backupId: string) => api.delete(`/api/v1/system/backup?id=${backupId}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['backups'] })
+    },
+  })
+}
+
+export function useClockDrift() {
+  return useQuery<{
+    gateway_time: string
+    gateway_clock_source: string
+    nodes: Array<{ node_id: string; display_name: string; has_heartbeat: boolean; node_reported_at?: string; received_at?: string; drift_ms: number | null; drift_label: string; uncertainty: 'ok' | 'warning' | 'critical' | 'unknown' }>
+    summary: { total: number; synchronized: number; uncertain: number }
+    note: string
+  }>({
+    queryKey: ['clock-drift'],
+    queryFn: () => api.get('/api/v1/system/clock'),
+    refetchInterval: 30_000,
+  })
+}
+
+export function useFieldTestChecklist() {
+  return useQuery<{
+    items: Array<{ id: string; section: string; text: string; severity: string; status: 'pass' | 'fail' | 'skip' | 'pending'; note: string; recorded_at: string | null }>
+    summary: { total: number; passed: number; failed: number; skipped: number; pending: number }
+    generated_at: string
+    spec_ref: string
+    note: string
+  }>({
+    queryKey: ['field-test'],
+    queryFn: () => api.get('/api/v1/system/field-test'),
+    refetchInterval: 60_000,
+  })
+}
+
+export function useRecordFieldTest() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ checklistId, status, note }: { checklistId: string; status: 'pass' | 'fail' | 'skip' | 'pending'; note?: string }) =>
+      api.patch(`/api/v1/system/field-test/${checklistId}`, { status, note }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['field-test'] })
+    },
+  })
+}
