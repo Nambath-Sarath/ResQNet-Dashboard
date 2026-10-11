@@ -28,19 +28,27 @@ export default function Home() {
   const view = useAppStore((s) => s.view)
 
   // Keep store in sync with the server-side auth state.
+  // The server response is authoritative — if it says not authenticated,
+  // clear the stale user from the store.
   useEffect(() => {
     if (auth?.authenticated && auth.user) {
       setUser(auth.user)
     } else if (auth && !auth.authenticated) {
+      // Session is truly gone — clear the stale user so we show login
       setUser(null)
     }
   }, [auth, setUser])
 
-  if (isLoading && !user) {
+  // Show loading state only on the very first load when we have no data yet
+  if (isLoading && !auth && !user) {
     return <LoadingState message="Connecting to gateway…" className="min-h-screen" />
   }
 
-  const authenticated = auth?.authenticated || !!user
+  // The server auth response is the source of truth.
+  // If auth?.authenticated is explicitly false, show login (ignore stale store user).
+  // If auth is still loading but we have a store user, show the dashboard optimistically
+  // (the auth check will re-verify in the background).
+  const authenticated = auth?.authenticated === true || (!auth && !!user)
 
   if (!authenticated) {
     return <LoginPage />

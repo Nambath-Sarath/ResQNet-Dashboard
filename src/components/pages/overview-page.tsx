@@ -2,6 +2,7 @@
 
 import { useOverview } from '@/lib/hooks'
 import { useAppStore } from '@/lib/store'
+import { ApiRequestError } from '@/lib/api-client'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { StatusBadge } from '@/components/shared/status-badge'
 import { BatteryIndicator, LinkQualityBar } from '@/components/shared/battery-indicator'
@@ -47,19 +48,26 @@ import {
 import type { ReactNode } from 'react'
 
 export function OverviewPage() {
-  const { data, isLoading, isError, refetch } = useOverview()
+  const { data, isLoading, isError, error, refetch } = useOverview()
   const setView = useAppStore((s) => s.setView)
 
   if (isLoading) return <LoadingSkeleton rows={6} />
-  if (isError)
+  if (isError) {
+    // Check if it's an auth error (session expired) vs a real gateway error
+    const isAuthError = error instanceof ApiRequestError && error.status === 401
     return (
       <ErrorState
-        title="Could not load overview"
-        description="The gateway may be unreachable. Check your connection to the Pi and try again."
+        title={isAuthError ? "Session expired" : "Could not load overview"}
+        description={
+          isAuthError
+            ? "Your session has expired. The page will redirect to login shortly."
+            : "The gateway may be unreachable. Check your connection to the Pi and try again."
+        }
         onRetry={() => refetch()}
         className="m-6"
       />
     )
+  }
   if (!data) return <EmptyState title="No data available" className="m-6" />
 
   return (
