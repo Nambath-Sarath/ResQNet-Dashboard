@@ -7,23 +7,35 @@ import { Wifi, WifiOff, RefreshCw, AlertTriangle } from 'lucide-react'
 import { FreshnessLabel } from '@/components/shared/freshness-label'
 import { useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import { ApiRequestError } from '@/lib/api-client'
 
 /** Sticky banner shown when the dashboard cannot reach the API or data is stale. */
 export function ConnectionBanner() {
   const connection = useAppStore((s) => s.connection)
   const setConnection = useAppStore((s) => s.setConnection)
   const lastSyncAt = useAppStore((s) => s.lastSyncAt)
-  const { isError, data: overview, refetch } = useOverview()
+  const { isError, error, data: overview, refetch } = useOverview()
   const qc = useQueryClient()
 
-  // If overview query errors with a 5xx or network failure, mark offline
+  // If overview query errors with a 5xx or network failure, mark offline.
+  // Do NOT mark offline for 401 (auth expired) — that's handled separately
+  // by the useOverview hook which clears the user + redirects to login.
   useEffect(() => {
     if (isError) {
+      // Check if it's an auth error (401) — don't show "gateway unreachable" for that
+      if (error instanceof ApiRequestError && error.status === 401) {
+        // Auth expired — don't set connection to offline, the login page will show
+        return
+      }
       setConnection('offline')
     } else if (connection === 'offline') {
       setConnection('connected')
     }
-  }, [isError, connection, setConnection])
+  }, [isError, error, connection, setConnection])
+
+  // Hide the banner if the overview succeeded or the error is just a 401 (auth)
+  const isAuthError = error instanceof ApiRequestError && error.status === 401
+  if (isAuthError) return null
 
   if (connection === 'connected' && !overview?.freshness.stale) {
     return null

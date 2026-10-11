@@ -62,6 +62,8 @@ export function useLogout() {
 export function useOverview() {
   const setLastSyncAt = useAppStore((s) => s.setLastSyncAt)
   const setConnection = useAppStore((s) => s.setConnection)
+  const setUser = useAppStore((s) => s.setUser)
+  const qc = useQueryClient()
   return useQuery<OverviewResponse>({
     queryKey: ['overview'],
     queryFn: async () => {
@@ -71,8 +73,17 @@ export function useOverview() {
         setConnection('connected')
         return r
       } catch (e) {
-        if (e instanceof ApiRequestError && e.status >= 500) {
-          setConnection('offline')
+        if (e instanceof ApiRequestError) {
+          if (e.status === 401) {
+            // Session expired or invalid — NOT a gateway-unreachable issue.
+            // Clear the user + invalidate auth so the login page is shown.
+            setUser(null)
+            qc.setQueryData(['auth', 'me'], { authenticated: false })
+            // Do NOT set connection to 'offline' — the gateway is reachable,
+            // the session is just expired.
+          } else if (e.status >= 500) {
+            setConnection('offline')
+          }
         }
         throw e
       }
