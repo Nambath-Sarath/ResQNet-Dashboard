@@ -5,6 +5,7 @@ import { useIncidentReport, downloadIncidentCsv } from '@/lib/hooks'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { LoadingSkeleton, ErrorState, EmptyState, ForbiddenState } from '@/components/shared/state-views'
+import { OperatorActivityPanel } from './operator-activity-panel'
 import {
   Select,
   SelectContent,
@@ -183,6 +184,9 @@ export function ReportsPage() {
               </CardContent>
             </Card>
           </div>
+
+          {/* Operator activity */}
+          <OperatorActivityPanel />
 
           {/* Incident list */}
           <Card>

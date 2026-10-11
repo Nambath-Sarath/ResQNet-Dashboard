@@ -392,3 +392,44 @@ Stage Summary:
 - All core spec (Phases 0-6) + 7 rounds of UX enhancements remain stable. This round added 2 high-value operator-efficiency features: (1) batch incident actions (acknowledge/assign/cancel multiple at once with per-incident result tracking + audit + realtime publish), (2) heuristic duplicate detection with confidence scoring + reasons + click-to-navigate.
 - The dashboard now supports bulk operations (critical for SOS floods where dozens of similar reports arrive together) and surfaces possible duplicates to prevent redundant dispatch.
 - Next round could add: incident merge workflow (actually merge duplicates into one canonical record), saved filter presets for other list pages (nodes, messages, audit), dashboard analytics/insights panel, or operator activity heatmaps.
+
+---
+Task ID: stage-9
+Agent: main (Z.ai Code) — cron-triggered 15-minute review
+Task: Incident merge workflow + operator activity panel. Rounding out the operational tooling.
+
+Work Log:
+- QA pass (Stages 1-8 stable): re-seeded DB, restarted dev server, agent-browser smoke test confirmed login → overview (6 nodes, 4 online, 2 critical) all working. No console errors. Lint clean.
+- Built incident merge API (`POST /api/v1/incidents/[id]/merge`):
+  - Body: { duplicate_id, note? }
+  - Validates: duplicate_id required, can't merge into self, can't merge an already-DUPLICATE, can't merge into a DUPLICATE.
+  - Actions: (1) marks duplicate as DUPLICATE (terminal) + sets related_incident_id to canonical, (2) adds a `merged` event to the duplicate + a `duplicate_merged` event to the canonical, (3) copies notes from duplicate to canonical with `[Merged from SOS-XXXX]` attribution, (4) adds the optional merge note, (5) two audit entries (incident.merge + incident.merged_into), (6) two realtime event publishes.
+  - Returns { canonical_id, duplicate_id, merged: true, notes_copied, note }.
+- Built operator activity API (`GET /api/v1/reports/operators?hours=168`):
+  - Per-operator stats: assigned_total, active_count, resolved_count, acknowledged_count, avg_ack_seconds, avg_resolve_seconds.
+  - Active incidents list (id/status/priority/category/created_at) for each operator.
+  - Audit action counts grouped by domain (incident/node/message/...) + total_actions.
+  - Summary totals: active_incidents, resolved_incidents, total_actions across all operators.
+  - Sorted by active_count desc, then resolved_count desc (busiest operators first).
+- Added `useMergeIncident` + `useOperatorActivity` hooks.
+- Added "Merge" button to the DuplicateDetectionCard: each duplicate row now has a "Merge" button (with GitMerge icon) that opens a confirmation dialog showing the duplicate's description + an optional merge-note field. On confirm: calls the merge API, invalidates the incident + duplicates + overview queries, shows a success toast.
+- Built `OperatorActivityPanel` (`src/components/pages/operator-activity-panel.tsx`):
+  - Time-range selector (24h / 7d / 30d).
+  - 3 summary metric cards (Active incidents / Resolved / Total actions).
+  - Per-operator cards with: name + role, active-count badge (red ≥5, amber ≥2, green <2), 4-stat grid (Assigned/Resolved/Avg ack/Avg resolve), active-incident chips (clickable → navigate to incident), action-count summary.
+  - Cards colored by load: red border for ≥5 active, amber for ≥2, neutral for <2 — so coordinators can spot overloaded operators at a glance.
+- Added the OperatorActivityPanel to the Reports page (between the breakdown cards and the incident records table).
+
+Verification (agent-browser through Caddy gateway on port 81):
+- ✅ Reports page shows new "Operator activity" panel with time-range selector, 3 summary metrics, and per-operator cards. Lena Okafor shows "3 active" with an amber badge.
+- ✅ Created a near-identical incident (SOS-1011, same category/location/description/people as SOS-1042) → navigated to SOS-1042 detail → duplicate card shows SOS-1011 with confidence 100 + "Merge" button.
+- ✅ Clicked "Merge" → dialog opened with title "Merge SOS-1011 into SOS-1042" + duplicate description + merge-note field.
+- ✅ Added note "Confirmed duplicate — same family, same location." → clicked "Merge incident" → toast "Merged SOS-1011 into SOS-1042. The duplicate is now in DUPLICATE status."
+- ✅ API confirms SOS-1011 status=DUPLICATE, related_incident_id=SOS-1042.
+- ✅ Canonical SOS-1042 timeline has a `duplicate_merged` event with the merge note.
+- ✅ No console errors. Lint clean. No dev-log errors.
+
+Stage Summary:
+- All core spec (Phases 0-6) + 8 rounds of UX enhancements remain stable. This round added 2 operational-tooling features: (1) incident merge workflow (mark duplicate as DUPLICATE terminal status + link to canonical + copy notes with attribution + audit + realtime), (2) operator activity panel for load balancing (per-operator stats + active-incident chips + load-colored cards).
+- The dashboard now covers the full incident lifecycle including duplicate handling (detect → merge → audit), and provides coordinators with load-balancing visibility across the operator team.
+- Next round could add: saved filter presets for other list pages (nodes, messages, audit), dashboard analytics/insights panel with charts, operator activity heatmaps by hour-of-day, or a survivor-merge workflow similar to incident merge.

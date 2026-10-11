@@ -760,3 +760,54 @@ export function useIncidentDuplicates(incidentId: string | null) {
     refetchInterval: 60_000,
   })
 }
+
+// --- Incident merge + operator activity -------------------------------------
+
+export function useMergeIncident() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ canonicalId, duplicateId, note }: { canonicalId: string; duplicateId: string; note?: string }) =>
+      api.post<{ canonical_id: string; duplicate_id: string; merged: boolean; notes_copied: number; note: string }>(
+        `/api/v1/incidents/${canonicalId}/merge`,
+        { duplicate_id: duplicateId, note },
+      ),
+    onSuccess: (_d, { canonicalId, duplicateId }) => {
+      qc.invalidateQueries({ queryKey: ['incident', canonicalId] })
+      qc.invalidateQueries({ queryKey: ['incident', duplicateId] })
+      qc.invalidateQueries({ queryKey: ['incidents'] })
+      qc.invalidateQueries({ queryKey: ['incident-duplicates', canonicalId] })
+      qc.invalidateQueries({ queryKey: ['overview'] })
+    },
+  })
+}
+
+export function useOperatorActivity(hours = 168) {
+  return useQuery<{
+    operators: Array<{
+      id: string
+      username: string
+      display_name: string
+      role: string
+      stats: {
+        assigned_total: number
+        active_count: number
+        resolved_count: number
+        acknowledged_count: number
+        avg_ack_seconds: number | null
+        avg_resolve_seconds: number | null
+      }
+      active_incidents: Array<{ id: string; status: string; priority: string; category: string; created_at: string }>
+      action_counts: Record<string, number>
+      total_actions: number
+    }>
+    total_operators: number
+    window_hours: number
+    since: string
+    generated_at: string
+    totals: { active_incidents: number; resolved_incidents: number; total_actions: number }
+  }>({
+    queryKey: ['operator-activity', hours],
+    queryFn: () => api.get(`/api/v1/reports/operators?hours=${hours}`),
+    refetchInterval: 60_000,
+  })
+}
