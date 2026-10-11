@@ -1,5 +1,6 @@
 import { db } from '@/lib/db'
 import { getCurrentOperator, handleError } from '@/lib/auth'
+import { Prisma } from '@prisma/client'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,9 +23,9 @@ export async function GET(req: Request) {
     const q = url.searchParams.get('q')?.toLowerCase()
     const limit = Math.min(200, Number(url.searchParams.get('limit') ?? 100))
 
-    const where: Record<string, unknown> = { AND: [] }
-    if (status) where.AND.push({ status })
-    if (where.AND.length === 0) delete where.AND
+    const filters: Prisma.SurvivorWhereInput[] = []
+    if (status) filters.push({ status })
+    const where: Prisma.SurvivorWhereInput = filters.length ? { AND: filters } : {}
 
     const survivors = await db.survivor.findMany({
       where,

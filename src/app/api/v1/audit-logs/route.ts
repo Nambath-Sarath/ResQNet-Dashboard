@@ -1,5 +1,6 @@
 import { db } from '@/lib/db'
 import { getCurrentOperator, handleError, requireRole } from '@/lib/auth'
+import { Prisma } from '@prisma/client'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,15 +18,15 @@ export async function GET(req: Request) {
     const since = url.searchParams.get('since')
     const limit = Math.min(500, Number(url.searchParams.get('limit') ?? 200))
 
-    const where: Record<string, unknown> = { AND: [] }
-    if (action) where.AND.push({ action: { contains: action } })
-    if (entity_type) where.AND.push({ entity_type })
-    if (actor_id) where.AND.push({ actor_id })
+    const filters: Prisma.AuditLogWhereInput[] = []
+    if (action) filters.push({ action: { contains: action } })
+    if (entity_type) filters.push({ entity_type })
+    if (actor_id) filters.push({ actor_id })
     if (since) {
       const d = new Date(since)
-      if (!Number.isNaN(d.getTime())) where.AND.push({ timestamp: { gte: d } })
+      if (!Number.isNaN(d.getTime())) filters.push({ timestamp: { gte: d } })
     }
-    if (where.AND.length === 0) delete where.AND
+    const where: Prisma.AuditLogWhereInput = filters.length ? { AND: filters } : {}
 
     const logs = await db.auditLog.findMany({
       where,

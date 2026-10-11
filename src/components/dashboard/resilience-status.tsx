@@ -294,7 +294,7 @@ function StatusCard({ label, value, tone, icon, pulse }: {
       'border-border bg-muted/30': tone === 'muted',
     })}>
       <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-        <span className={pulse && 'animate-pulse'}>{icon}</span>
+        <span className={pulse ? 'animate-pulse' : undefined}>{icon}</span>
         {label}
       </div>
       <div className={cn('mt-1 text-sm font-semibold', {

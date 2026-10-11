@@ -78,7 +78,7 @@ export async function GET(req: Request) {
         for (const row of byOperator[id]) for (const v of row) total += v
         return { id, display_name: op.display_name, role: op.role, total_actions: total }
       })
-      .filter((x): x is { id: string; display_name: string; role: string; total_actions: number } => x !== null)
+      .filter((x): x is { id: string; display_name: string; role: (typeof operators)[number]['role']; total_actions: number } => x !== null)
       .sort((a, b) => b.total_actions - a.total_actions)
 
     return Response.json({

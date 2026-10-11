@@ -3,19 +3,16 @@ import { getCurrentOperator, handleError, requireRole, audit } from '@/lib/auth'
 import { publishEvent } from '@/lib/realtime'
 import { writeFile, readFile, mkdir } from 'fs/promises'
 import { existsSync } from 'fs'
-import { join, resolve, relative, isAbsolute } from 'path'
+import { join, resolve, isAbsolute } from 'path'
 import { tmpdir } from 'os'
+import { backupPathForId as safeBackupPathForId } from '@/lib/backup-utils'
 
 export const dynamic = 'force-dynamic'
 
 const BACKUP_DIR = join(tmpdir(), 'resqnet-backups')
 
 function backupPathForId(id: string): string | null {
-  if (!/^[A-Za-z0-9_-]+$/.test(id)) return null
-  const directory = resolve(BACKUP_DIR)
-  const candidate = resolve(directory, `${id}.db`)
-  const rel = relative(directory, candidate)
-  return rel && !rel.startsWith('..') && !isAbsolute(rel) ? candidate : null
+  return safeBackupPathForId(BACKUP_DIR, id)
 }
 
 function databasePath(): string {

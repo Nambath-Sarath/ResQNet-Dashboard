@@ -72,7 +72,7 @@ export function DeploymentLockCard({ node }: { node: NodeDetail }) {
           setOpen(false)
         },
         onError: (e) => {
-          if (e.message.includes('CONFIRMATION_REQUIRED') || e.code === 'CONFIRMATION_REQUIRED') {
+          if (e.message.includes('CONFIRMATION_REQUIRED')) {
             toast.error('This node is already deployed. Confirm the override to proceed.')
           } else {
             toast.error(e.message)

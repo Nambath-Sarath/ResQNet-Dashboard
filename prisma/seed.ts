@@ -1,7 +1,7 @@
 // ResQNet seed script — creates realistic mock data for local development.
 // Run: `bun run db:seed`
 
-import { PrismaClient } from '@prisma/client'
+import { PrismaClient, IncidentCategory, IncidentPriority, IncidentStatus, MessageStatus } from '@prisma/client'
 import { randomUUID } from 'crypto'
 
 const db = new PrismaClient()
@@ -541,9 +541,9 @@ async function main() {
       data: {
         id: spec.id,
         client_submission_id: `phone-${spec.id.toLowerCase()}`,
-        category: spec.category,
-        priority: spec.priority,
-        status: spec.status,
+        category: spec.category as IncidentCategory,
+        priority: spec.priority as IncidentPriority,
+        status: spec.status as IncidentStatus,
         description: spec.description,
         people_affected: spec.people,
         source_type: 'survivor_portal',
@@ -639,7 +639,7 @@ async function main() {
         destination: m.destination,
         message_type: m.type,
         body: m.body,
-        status: m.status,
+        status: m.status as MessageStatus,
         created_at: minutesAgo(20),
         accepted_at: minutesAgo(19),
         forwarded_at: m.ackMins ? minutesAgo(m.ackMins + 2) : null,

@@ -110,7 +110,7 @@ export function OverviewPage() {
           sub={`${data.incidents.new} new`}
           tone={data.incidents.unacknowledged > 0 ? 'danger' : 'success'}
           pulse={data.incidents.unacknowledged > 0}
-          onClick={() => setView({ name: 'incidents', ...(0 && {}) })}
+          onClick={() => setView({ name: 'incidents' })}
         />
         <NetworkCard
           icon={<Zap className="h-4 w-4" />}

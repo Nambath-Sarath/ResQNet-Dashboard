@@ -95,7 +95,10 @@ export function useNetworkMonitor() {
       for (const write of pending) {
         markInFlight(write.id)
         try {
-          const body = { ...write.body, client_submission_id: write.client_submission_id }
+          const body = {
+            ...(write.body && typeof write.body === 'object' ? write.body : {}),
+            client_submission_id: write.client_submission_id,
+          }
           if (write.method === 'POST') {
             await api.post(write.endpoint, body)
           } else if (write.method === 'PATCH') {

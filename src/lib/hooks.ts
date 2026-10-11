@@ -393,7 +393,7 @@ export function useSurvivors(filters?: { status?: string; q?: string }) {
   if (filters?.status) params.set('status', filters.status)
   if (filters?.q) params.set('q', filters.q)
   const qs = params.toString()
-  return useQuery<{ survivors: Array<{ id: string; temporary_ref: string; display_name: string | null; contact: string | null; first_seen_at: string; last_seen_at: string; status: string; location_lat: number | null; location_lon: number | null; location_source: string | null; notes: string | null }>; total: number; can_see_contact: boolean }>({
+  return useQuery<{ survivors: Array<{ id: string; temporary_ref: string; display_name: string | null; contact: string | null; first_seen_at: string; last_seen_at: string; status: string; location_lat: number | null; location_lon: number | null; location_source: string | null; notes: string | null }>; total: number; can_see_contact: boolean; freshness?: { last_updated_at: string; stale: boolean } }>({
     queryKey: ['survivors', filters],
     queryFn: () => api.get(`/api/v1/survivors${qs ? `?${qs}` : ''}`),
     refetchInterval: 30_000,

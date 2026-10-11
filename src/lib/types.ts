@@ -232,6 +232,7 @@ export type IncidentDetail = {
   resolved_at: string | null
   updated_at: string
   assigned_to_id: string | null
+  assigned_to?: { id: string; display_name: string; role: OperatorRole } | null
   assignee: { id: string; display_name: string; role: OperatorRole } | null
   source_node: { id: string; display_name: string } | null
   events: IncidentEvent[]
@@ -282,6 +283,7 @@ export type OverviewResponse = {
     deployment_lat: number | null
     deployment_lon: number | null
     firmware_version: string | null
+    runtime_state: RuntimeState
   }>
   recent_activity: Array<{
     kind: 'incident' | 'node' | 'audit'

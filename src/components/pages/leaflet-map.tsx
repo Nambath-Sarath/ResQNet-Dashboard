@@ -11,17 +11,15 @@ import markerShadow from 'leaflet/dist/images/marker-shadow.png'
 
 ;(L.Icon.Default.prototype as any)._getIconUrl = () => markerIcon
 ;(L.Icon.Default.prototype as any)._setIconStyles = function (img: HTMLImageElement, name: string) {
-  const config = {
+  const config: Record<string, { image: string | { src: string }; size: number[]; anchor: number[] }> = {
     icon: { image: markerIcon, size: [25, 41], anchor: [12, 41] },
     'icon-2x': { image: markerIcon2x, size: [50, 82], anchor: [25, 82] },
     shadow: { image: markerShadow, size: [41, 41], anchor: [12, 41] },
   }
-  const c = (config as Record<string, { image: string; size: number[]; anchor: number[] }>)[name]
+  const c = config[name]
   if (!c) return
-  img.src = c.image
-  // @ts-expect-error setting Leaflet internal style
+  img.src = typeof c.image === 'string' ? c.image : c.image.src
   img.style.width = `${c.size[0]}px`
-  // @ts-expect-error setting Leaflet internal style
   img.style.height = `${c.size[1]}px`
 }
 
@@ -142,7 +140,7 @@ function makeIcon(kind: string, color: string) {
     const cx = size / 2
     const cy = size / 2
     const r = size / 2 - 2
-    const pts = []
+    const pts: string[] = []
     for (let i = 0; i < 5; i++) {
       const a = -Math.PI / 2 + (i * 2 * Math.PI) / 5
       pts.push(`${cx + r * Math.cos(a)},${cy + r * Math.sin(a)}`)

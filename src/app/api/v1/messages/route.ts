@@ -1,6 +1,7 @@
 import { db } from '@/lib/db'
 import { getCurrentOperator, handleError, requireRole, audit } from '@/lib/auth'
 import { publishEvent } from '@/lib/realtime'
+import { Prisma } from '@prisma/client'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,10 +20,10 @@ export async function GET(req: Request) {
     const q = url.searchParams.get('q')?.toLowerCase()
     const limit = Math.min(200, Number(url.searchParams.get('limit') ?? 100))
 
-    const where: Record<string, unknown> = { AND: [] }
-    if (status && VALID_STATUSES.includes(status)) where.AND.push({ status })
-    if (destination) where.AND.push({ destination })
-    if (where.AND.length === 0) delete where.AND
+    const filters: Prisma.MessageWhereInput[] = []
+    if (status && VALID_STATUSES.includes(status)) filters.push({ status: status as never })
+    if (destination) filters.push({ destination })
+    const where: Prisma.MessageWhereInput = filters.length ? { AND: filters } : {}
 
     const messages = await db.message.findMany({
       where,

@@ -25,16 +25,16 @@ export async function GET(req: Request) {
     const q = url.searchParams.get('q')?.toLowerCase()
     const limit = Math.min(200, Number(url.searchParams.get('limit') ?? 100))
 
-    const where: Record<string, unknown> = { AND: [] }
-    if (status && STATUS_VALUES.includes(status as never)) where.AND.push({ status })
-    if (priority && PRIORITY_VALUES.includes(priority as never)) where.AND.push({ priority })
-    if (category && CATEGORY_VALUES.includes(category as never)) where.AND.push({ category })
-    if (assigned_to_id) where.AND.push({ assigned_to_id })
+    const filters: Prisma.IncidentWhereInput[] = []
+    if (status && STATUS_VALUES.includes(status as never)) filters.push({ status: status as never })
+    if (priority && PRIORITY_VALUES.includes(priority as never)) filters.push({ priority: priority as never })
+    if (category && CATEGORY_VALUES.includes(category as never)) filters.push({ category: category as never })
+    if (assigned_to_id) filters.push({ assigned_to_id })
     if (since) {
       const d = new Date(since)
-      if (!Number.isNaN(d.getTime())) where.AND.push({ created_at: { gte: d } })
+      if (!Number.isNaN(d.getTime())) filters.push({ created_at: { gte: d } })
     }
-    if (where.AND.length === 0) delete where.AND
+    const where: Prisma.IncidentWhereInput = filters.length ? { AND: filters } : {}
 
     const incidents = await db.incident.findMany({
       where,
