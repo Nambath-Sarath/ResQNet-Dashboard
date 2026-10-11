@@ -666,3 +666,40 @@ export function useRecordFieldTest() {
     },
   })
 }
+
+// --- Global search + trends -------------------------------------------------
+
+export type SearchResult = {
+  type: 'incident' | 'node' | 'survivor' | 'shelter' | 'message'
+  id: string
+  title: string
+  subtitle: string
+  badge: string
+  meta: string
+  created_at?: string
+  view: { name: 'incident'; incidentId: string } | { name: 'node'; nodeId: string } | { name: 'survivors' } | { name: 'shelters' } | { name: 'messages' }
+}
+
+export function useGlobalSearch(q: string, enabled: boolean) {
+  return useQuery<{ results: SearchResult[]; total: number; q: string; counts: Record<string, number> }>({
+    queryKey: ['search', q],
+    queryFn: () => api.get(`/api/v1/search?q=${encodeURIComponent(q)}`),
+    enabled: enabled && q.length >= 2,
+    staleTime: 10_000,
+  })
+}
+
+export function useTrends(hours = 24) {
+  return useQuery<{
+    window_hours: number
+    since: string
+    generated_at: string
+    incidents: Array<{ hour: string; count: number; critical: number; resolved: number }>
+    heartbeats: Array<{ hour: string; heartbeats: number }>
+    summary: { total_incidents: number; total_critical: number; peak_per_hour: number; avg_per_hour: number }
+  }>({
+    queryKey: ['trends', hours],
+    queryFn: () => api.get(`/api/v1/reports/trends?hours=${hours}`),
+    refetchInterval: 60_000,
+  })
+}

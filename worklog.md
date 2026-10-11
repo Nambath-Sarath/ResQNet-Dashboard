@@ -200,3 +200,53 @@ Stage Summary:
 - The dashboard now covers all 14 navigation items (the spec §5 route hierarchy + the new Resilience page). The full ResQNet Command Dashboard spec (Phases 0–6) is implemented.
 - Resilience pipeline is fully circular: browser offline → writes queue locally → API recovers → queue replays with idempotency → cache invalidates → UI refetches authoritative state. Backup → test-restore → audit. Field-test results → system_events → audit.
 - The project is now production-shaped for a Raspberry Pi deployment (pending: offline Leaflet tile package, real ESP32 firmware, real radio topology field testing per spec §16.4).
+
+---
+Task ID: stage-5
+Agent: main (Z.ai Code) — cron-triggered 15-minute review
+Task: Post-spec polish — Command Palette (Cmd+K), Overview trends chart, printable incident report, global search. Enhancing operator UX beyond the core spec.
+
+Work Log:
+- QA pass (Stages 1-4 stable): re-seeded DB, restarted dev server, agent-browser smoke test confirmed login → overview (6 nodes, 4 online, 2 critical) → incident detail → situation map (24 markers, 12 tiles) all working. No console errors. Lint clean.
+- Built global search API (`GET /api/v1/search?q=...`): searches across incidents (id + description), nodes (id + display_name), survivors (temp_ref + display_name with role-based contact visibility), shelters (name), messages (body + destination). Returns up to 5 results per type (25 max) with view-routing metadata.
+- Built trends API (`GET /api/v1/reports/trends?hours=24`): bucketed hourly incident counts (total + critical + resolved) + heartbeat counts per hour, with summary stats (total, peak/hour, avg/hour).
+- Added `useGlobalSearch` + `useTrends` hooks.
+- Built Command Palette (`src/components/dashboard/command-palette.tsx`): Cmd+K / Ctrl+K triggered dialog with:
+  - Global search input (debounced, ≥2 chars triggers search)
+  - Quick-nav items (12 destinations) when no query
+  - Search results with type icons + badges + keyboard navigation (↑↓ to navigate, Enter to select, Esc to close)
+  - Quick-nav shortcuts (g+o for overview, g+i for incidents, etc.)
+  - Footer with keyboard hints
+- Added "Search… ⌘K" button to the TopBar (visible on sm+ screens).
+- Wired CommandPalette into DashboardShell.
+- Built TrendsCard (`src/components/pages/trends-card.tsx`): SVG area chart showing hourly incident volume over 24h with critical-incidents overlay in red. Includes legend + heartbeat count summary. Peak/avg stats in the header.
+- Added TrendsCard to the Overview page (between summary cards and main grid).
+- Built PrintableIncidentReport (`src/components/pages/printable-incident-report.tsx`): print-friendly layout with:
+  - Header with incident ID + generation timestamp
+  - 4-cell status summary (Status/Priority/Category/People)
+  - Description section
+  - Location section with accuracy disclaimer
+  - Timeline table (event/change/by/at)
+  - Metadata grid (source, node, submission ID, assignee, timestamps)
+  - Operator notes
+  - Footer with delivery-state disclaimer
+- Added "Print" button to IncidentDetailPage header → opens dialog with the printable report → window.print() triggers browser print.
+- Added print CSS to globals.css (`@media print` hides everything except `.print-target`).
+- Fixed accessibility warnings: added `sr-only` DialogTitle + DialogDescription to the print dialog; added `aria-describedby={undefined}` to DialogContent.
+- Fixed lint errors: removed set-state-in-effect patterns in command-palette (moved query-reset into onChange + open-toggle handler).
+
+Verification (agent-browser through Caddy gateway on port 81):
+- ✅ Topbar shows "Search… ⌘K" button.
+- ✅ Cmd+K opens command palette with quick-nav items (Overview, Incidents, Nodes, etc.) + keyboard hints footer.
+- ✅ Typed "SOS-1042" → search found the incident with CRITICAL badge + description preview.
+- ✅ Clicked search result → navigated directly to incident detail page.
+- ✅ Incident detail shows new "Print" button.
+- ✅ Clicked Print → dialog opened with printable report (header, status summary, description, timeline table, metadata, footer with delivery-state disclaimer).
+- ✅ Overview page renders new TrendsCard ("Incident volume — last 24h" with peak 5/h, avg, heartbeat count).
+- ✅ No console errors after accessibility fixes. Lint clean.
+- ✅ Realtime service still healthy (cursor 9).
+
+Stage Summary:
+- All core spec (Phases 0-6) remains stable. This round added 3 high-value UX features beyond the spec: (1) Cmd+K command palette with global search + quick nav, (2) Overview trends chart with hourly incident volume + critical overlay, (3) printable incident report with print CSS.
+- The dashboard is now more operator-efficient: keyboard-first navigation, at-a-glance trends, and printable reports for offline handover.
+- Next round could add: keyboard shortcuts help dialog, mobile responsiveness polish across all pages, notification preferences per operator, or a dashboard analytics/insights panel.

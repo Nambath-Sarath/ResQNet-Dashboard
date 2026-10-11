@@ -34,6 +34,7 @@ import {
 import { StatusBadge } from '@/components/shared/status-badge'
 import { FreshnessLabel } from '@/components/shared/freshness-label'
 import { LoadingSkeleton, ErrorState, EmptyState } from '@/components/shared/state-views'
+import { PrintableIncidentReport } from './printable-incident-report'
 import { toast } from 'sonner'
 import {
   ArrowLeft,
@@ -52,6 +53,7 @@ import {
   Plus,
   Send,
   Navigation,
+  Printer,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
@@ -91,6 +93,7 @@ export function IncidentDetailPage({ incidentId }: { incidentId: string }) {
   const addNote = useAddNote()
   const [noteOpen, setNoteOpen] = useState(false)
   const [noteBody, setNoteBody] = useState('')
+  const [printOpen, setPrintOpen] = useState(false)
 
   const submitNote = () => {
     if (!noteBody.trim()) return
@@ -175,7 +178,21 @@ export function IncidentDetailPage({ incidentId }: { incidentId: string }) {
           </div>
         </div>
         <FreshnessLabel timestamp={incident.updated_at} label="Updated" />
+        <Button variant="outline" size="sm" onClick={() => setPrintOpen(true)}>
+          <Printer className="mr-1 h-3.5 w-3.5" /> Print
+        </Button>
       </div>
+
+      {/* Print dialog */}
+      <Dialog open={printOpen} onOpenChange={setPrintOpen}>
+        <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto scrollbar-thin p-0" aria-describedby={undefined}>
+          <DialogHeader className="sr-only">
+            <DialogTitle>Printable incident report — {incident.id}</DialogTitle>
+            <DialogDescription>Print-friendly incident report</DialogDescription>
+          </DialogHeader>
+          <PrintableIncidentReport incidentId={incidentId} />
+        </DialogContent>
+      </Dialog>
 
       {/* Action bar */}
       {transitions.length > 0 && (

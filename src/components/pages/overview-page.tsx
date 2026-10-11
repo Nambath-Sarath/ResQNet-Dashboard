@@ -31,6 +31,7 @@ import {
   Cpu,
 } from 'lucide-react'
 import { QuickIncidentComposer } from './quick-incident-composer'
+import { TrendsCard } from './trends-card'
 import { cn } from '@/lib/utils'
 import {
   CATEGORY_LABELS,
@@ -113,6 +114,9 @@ export function OverviewPage() {
           onClick={() => setView({ name: 'incidents' })}
         />
       </div>
+
+      {/* Trends chart */}
+      <TrendsCard hours={24} />
 
       {/* Main grid */}
       <div className="grid gap-4 xl:grid-cols-3">

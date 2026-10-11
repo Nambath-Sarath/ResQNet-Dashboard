@@ -14,6 +14,7 @@ import {
   Radio,
   Server,
   Clock,
+  Search,
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -121,6 +122,20 @@ export function TopBar() {
 
         {/* Resilience status (network + write-queue) */}
         <ResilienceStatusPill />
+
+        {/* Command palette trigger (Cmd+K) */}
+        <button
+          onClick={() => {
+            // Dispatch a synthetic Cmd+K to open the palette
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true, ctrlKey: navigator.platform.includes('Mac') }))
+          }}
+          className="hidden items-center gap-1.5 rounded-md border border-border bg-card px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground sm:flex"
+          title="Open command palette (Cmd+K)"
+        >
+          <Search className="h-3 w-3" />
+          <span>Search…</span>
+          <kbd className="rounded border border-border bg-muted px-1 py-0 font-mono text-[9px]">⌘K</kbd>
+        </button>
 
         {/* Refresh */}
         <Button

@@ -9,6 +9,7 @@ import { useRealtime } from '@/lib/use-realtime'
 import { useNetworkMonitor } from '@/lib/use-network-monitor'
 import { RealtimeEventFeedButton } from './realtime-feed'
 import { OfflineBanner } from './offline-banner'
+import { CommandPalette } from './command-palette'
 import { useEffect } from 'react'
 import type { ReactNode } from 'react'
 
@@ -44,6 +45,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
         </div>
       </div>
       <Footer />
+      <CommandPalette />
     </div>
   )
 }
