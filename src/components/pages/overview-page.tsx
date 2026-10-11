@@ -380,7 +380,6 @@ export function OverviewPage() {
                     key={`${a.kind}-${a.id}`}
                     className="relative flex gap-3 px-4 py-2.5 text-sm"
                   >
-                    <span className="absolute left-[1.15rem] top-0 h-full w-px bg-border last:hidden" />
                     <div
                       className={cn(
                         'mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border bg-card text-[10px] font-bold',

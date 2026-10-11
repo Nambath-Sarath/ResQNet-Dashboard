@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils'
 
 /**
  * Mini trends chart for the Overview page.
- * Shows incident volume per hour over the last 24h as an area chart,
+ * Shows incident volume per hour over the last 24h as a bar chart,
  * with critical incidents highlighted.
  */
 export function TrendsCard({ hours = 24 }: { hours?: number }) {
@@ -39,48 +39,21 @@ export function TrendsCard({ hours = 24 }: { hours?: number }) {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        {/* Area chart */}
+        {/* Bar chart */}
         <div className="relative h-32">
           <svg viewBox={`0 0 ${data.incidents.length * 8} 100`} className="h-full w-full" preserveAspectRatio="none">
-            <defs>
-              <linearGradient id="trendGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="var(--info)" stopOpacity="0.4" />
-                <stop offset="100%" stopColor="var(--info)" stopOpacity="0.05" />
-              </linearGradient>
-              <linearGradient id="critGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="var(--danger)" stopOpacity="0.5" />
-                <stop offset="100%" stopColor="var(--danger)" stopOpacity="0.1" />
-              </linearGradient>
-            </defs>
-            {/* Total incidents area */}
-            {data.incidents.length > 1 && (
-              <>
-                <path
-                  d={buildPath(data.incidents.map((b) => b.count), maxCount, 8, 100)}
-                  fill="url(#trendGrad)"
-                  stroke="var(--info)"
-                  strokeWidth="1.5"
-                />
-                {/* Critical overlay */}
-                <path
-                  d={buildPath(data.incidents.map((b) => b.critical), maxCount, 8, 100)}
-                  fill="url(#critGrad)"
-                  stroke="var(--danger)"
-                  strokeWidth="1.5"
-                />
-              </>
-            )}
-            {/* Bars for each hour */}
+            {/* Stacked bars for each hour */}
             {data.incidents.map((b, i) => {
               const h = (b.count / maxCount) * 100
               const critH = (b.critical / maxCount) * 100
+              const regularH = Math.max(0, h - critH)
               return (
                 <g key={i}>
                   <rect
                     x={i * 8 + 1}
-                    y={100 - h}
+                    y={100 - regularH - critH}
                     width={6}
-                    height={h}
+                    height={regularH}
                     fill="var(--info)"
                     opacity={0.6}
                     rx={1}
@@ -125,15 +98,4 @@ export function TrendsCard({ hours = 24 }: { hours?: number }) {
       </CardContent>
     </Card>
   )
-}
-
-function buildPath(values: number[], max: number, barWidth: number, height: number): string {
-  if (values.length === 0) return ''
-  const points = values.map((v, i) => {
-    const x = i * barWidth + 4
-    const y = height - (v / max) * height
-    return `${x},${y}`
-  })
-  // Start from bottom-left
-  return `M 0,${height} L ${points.join(' L ')} L ${(values.length - 1) * barWidth + 4},${height} Z`
 }
