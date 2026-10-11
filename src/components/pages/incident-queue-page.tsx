@@ -9,6 +9,7 @@ import { StatusBadge } from '@/components/shared/status-badge'
 import { FreshnessLabel } from '@/components/shared/freshness-label'
 import { LoadingSkeleton, EmptyState, ErrorState } from '@/components/shared/state-views'
 import { QuickIncidentComposer } from './quick-incident-composer'
+import { FilterPresetsBar } from './filter-presets-bar'
 import {
   Siren,
   Search,
@@ -50,6 +51,7 @@ export function IncidentQueuePage() {
   const [status, setStatus] = useState('all')
   const [priority, setPriority] = useState('all')
   const [q, setQ] = useState('')
+  const [activePresetId, setActivePresetId] = useState<string | null>(null)
   const setView = useAppStore((s) => s.setView)
   const { data: overview } = useOverview()
   const { data, isLoading, isError, refetch } = useIncidents({
@@ -58,15 +60,29 @@ export function IncidentQueuePage() {
     q: q || undefined,
   })
 
+  const applyPreset = (filters: { status?: string; priority?: string; q?: string }) => {
+    setStatus(filters.status ?? 'all')
+    setPriority(filters.priority ?? 'all')
+    setQ(filters.q ?? '')
+  }
+
   return (
     <div className="space-y-4 p-4 sm:p-6">
+      {/* Saved filter presets */}
+      <FilterPresetsBar
+        currentFilters={{ status, priority, q }}
+        onApply={applyPreset}
+        activePresetId={activePresetId}
+        onActiveChange={setActivePresetId}
+      />
+
       {/* Filter bar */}
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative flex-1 min-w-[200px] max-w-md">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             value={q}
-            onChange={(e) => setQ(e.target.value)}
+            onChange={(e) => { setQ(e.target.value); setActivePresetId(null) }}
             placeholder="Search incident ID or description…"
             className="pl-9"
           />
@@ -76,7 +92,7 @@ export function IncidentQueuePage() {
           {STATUS_FILTERS.map((f) => (
             <button
               key={f.value}
-              onClick={() => setStatus(f.value)}
+              onClick={() => { setStatus(f.value); setActivePresetId(null) }}
               className={cn(
                 'rounded px-2 py-1 text-xs font-medium transition-colors',
                 status === f.value
@@ -92,7 +108,7 @@ export function IncidentQueuePage() {
           {PRIORITY_FILTERS.map((f) => (
             <button
               key={f.value}
-              onClick={() => setPriority(f.value)}
+              onClick={() => { setPriority(f.value); setActivePresetId(null) }}
               className={cn(
                 'rounded px-2 py-1 text-xs font-medium transition-colors',
                 priority === f.value

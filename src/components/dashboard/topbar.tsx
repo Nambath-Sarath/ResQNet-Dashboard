@@ -79,6 +79,7 @@ export function TopBar() {
         size="icon"
         className="md:hidden"
         onClick={() => setMobileNavOpen(true)}
+        aria-label="Open navigation menu"
       >
         <Menu className="h-5 w-5" />
       </Button>
@@ -147,6 +148,7 @@ export function TopBar() {
           size="icon"
           onClick={() => refetch()}
           title="Refresh"
+          aria-label="Refresh data"
           className={cn(isFetching && 'animate-spin')}
         >
           <svg
@@ -170,7 +172,7 @@ export function TopBar() {
         {/* Theme */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon">
+            <Button variant="ghost" size="icon" aria-label="Toggle theme">
               <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
               <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
             </Button>

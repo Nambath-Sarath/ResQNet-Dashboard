@@ -298,3 +298,42 @@ Stage Summary:
 - All core spec (Phases 0-6) + prior UX enhancements (command palette, trends chart, printable report) remain stable. This round added 3 operator-awareness features: (1) Web Audio API audible alert system with 5 distinct beep patterns, (2) per-operator notification preferences with per-event-type sound/toast overrides + volume control, (3) keyboard shortcuts help dialog (? key) documenting all 17 shortcuts.
 - The dashboard now provides multi-modal alerts: visual (toast + banner), audible (beep patterns), and persistent (live event feed + write-queue panel). Operators can customize which events trigger which alert modality.
 - Next round could add: mobile responsiveness audit across all pages, saved filter presets for common operator workflows, a dashboard analytics/insights panel, or deeper incident-merge/duplicate-detection tooling.
+
+---
+Task ID: stage-7
+Agent: main (Z.ai Code) — cron-triggered 15-minute review
+Task: Mobile responsiveness audit + saved filter presets + accessibility fixes.
+
+Work Log:
+- QA pass (Stages 1-6 stable): re-seeded DB, restarted dev server, agent-browser smoke test at desktop (1280×800) confirmed login → overview → command palette all working. No console errors. Lint clean.
+- Mobile responsiveness audit (390×844 viewport, iPhone-size):
+  - Login page: split-screen layout collapses to single-column form on mobile ✓
+  - Overview: summary cards stack 2-col, trends chart + priority queue + node health + recent activity all render correctly ✓
+  - Incident queue: filter bar wraps, table horizontally scrolls (overflow-x-auto scrollbar-thin) ✓
+  - Node list: table horizontally scrolls on mobile, card grid stacks ✓
+  - Node detail: 5 tabs fit within viewport (no overflow) ✓
+  - Reports: 4 metric cards stack 2-col, breakdown cards stack, incident table scrolls ✓
+  - Situation map: 24 markers + 12 tiles render at 500px height ✓
+  - Mobile nav (Sheet): opens via hamburger, all 14 nav items present ✓
+- Accessibility fixes found during audit:
+  - Mobile menu button (`Menu` icon) had no aria-label → added `aria-label="Open navigation menu"` so screen readers announce it
+  - Theme toggle button had no aria-label → added `aria-label="Toggle theme"`
+  - Refresh button had only `title` (tooltip) → added `aria-label="Refresh data"` for screen readers
+- Built saved filter presets system:
+  - `src/lib/filter-presets.ts`: zustand+persist store with 3 default presets ("Critical unacknowledged", "All open", "Rescue only"), addPreset/removePreset/renamePreset/togglePin actions, hasPreset check for duplicate names.
+  - `src/components/pages/filter-presets-bar.tsx`: horizontal bar of preset "chips" with pin/delete actions on hover, plus a "Save current" dialog that shows the active filter summary and lets the operator name + describe the preset. Pinned presets sort first.
+  - Integrated into `IncidentQueuePage`: presets bar above the filter row, active preset highlighted, manual filter changes clear the active preset selection so the chip highlight stays accurate.
+- Verification: clicked "Critical unacknowledged" preset → queue filtered to only CRITICAL+NEW incidents (SOS-1042, SOS-1033). Saved a new preset "My critical queue" via the dialog → it appeared in the bar alongside defaults + toast "Preset saved." confirmed.
+
+Verification (agent-browser through Caddy gateway on port 81):
+- ✅ Mobile viewport (390×844): login, overview, incident queue, node list, node detail, reports, situation map all render correctly. Mobile nav sheet opens with hamburger.
+- ✅ Mobile menu button now has aria-label "Open navigation menu".
+- ✅ Filter presets bar renders with 3 default presets + "Save current" button.
+- ✅ Clicking a preset applies its filters to the incident queue immediately.
+- ✅ Saving a new preset works — appears in bar + toast confirmation.
+- ✅ No console errors. Lint clean. No dev-log errors.
+
+Stage Summary:
+- All core spec (Phases 0-6) + 6 rounds of UX enhancements remain stable. This round added: (1) mobile responsiveness audit confirming all pages work on phone-size viewports with horizontal-scrolling tables where needed, (2) 3 accessibility aria-label fixes for topbar icon buttons, (3) saved filter presets system with 3 defaults + save/delete/pin + active-preset highlighting.
+- The dashboard now supports operator workflows on mobile (field use per spec §15) and reusable filter presets for common queries.
+- Next round could add: saved filter presets for other list pages (nodes, messages, audit), a dashboard analytics/insights panel, incident-merge/duplicate-detection tooling, or batch incident actions (acknowledge/assign multiple at once).
