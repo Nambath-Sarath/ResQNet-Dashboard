@@ -1,5 +1,6 @@
 import { db } from '@/lib/db'
 import { getCurrentOperator, handleError, requireOperator, audit } from '@/lib/auth'
+import { publishEvent } from '@/lib/realtime'
 
 export const dynamic = 'force-dynamic'
 
@@ -165,6 +166,20 @@ export async function POST(req: Request) {
       entity_type: 'incident',
       entity_id: incident.id,
       metadata: { category, priority, source_type },
+    })
+
+    // Publish realtime event AFTER the DB transaction succeeded (spec §8.3)
+    await publishEvent({
+      event_type: 'incident.created',
+      entity_id: incident.id,
+      data: {
+        status: incident.status,
+        category: incident.category,
+        priority: incident.priority,
+        source_node_id: incident.source_node_id,
+        source_type: incident.source_type,
+        created_at: incident.created_at.toISOString(),
+      },
     })
 
     return Response.json(

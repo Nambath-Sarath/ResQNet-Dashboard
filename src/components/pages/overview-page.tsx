@@ -30,6 +30,7 @@ import {
   FileWarning,
   Cpu,
 } from 'lucide-react'
+import { QuickIncidentComposer } from './quick-incident-composer'
 import { cn } from '@/lib/utils'
 import {
   CATEGORY_LABELS,
@@ -62,6 +63,19 @@ export function OverviewPage() {
 
   return (
     <div className="space-y-5 p-4 sm:p-6">
+      {/* Operator context + quick action */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse-dot" />
+            Welcome, {data.operator.display_name}
+          </span>
+          <span className="text-muted-foreground/40">·</span>
+          <span className="tabular-nums">{new Date(data.generated_at).toLocaleString()}</span>
+        </div>
+        <QuickIncidentComposer />
+      </div>
+
       {/* Top summary strip */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <NetworkCard

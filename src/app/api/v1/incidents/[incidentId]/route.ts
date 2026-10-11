@@ -7,6 +7,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '@/lib/auth'
+import { publishEvent } from '@/lib/realtime'
 
 export const dynamic = 'force-dynamic'
 
@@ -135,6 +136,29 @@ export async function PATCH(req: Request, { params }: Params) {
         entity_type: 'incident',
         entity_id: incidentId,
         metadata: { old: e.old_value, new: e.new_value },
+      })
+      // Publish a realtime event for each lifecycle transition
+      const eventTypeMap: Record<string, string> = {
+        acknowledged: 'incident.acknowledged',
+        assigned: 'incident.assigned',
+        resolved: 'incident.resolved',
+        cancelled: 'incident.cancelled',
+        priority_changed: 'incident.priority_changed',
+        status_changed: 'incident.updated',
+        note_added: 'incident.note_added',
+      }
+      const rtType = eventTypeMap[e.event_type] ?? 'incident.updated'
+      await publishEvent({
+        event_type: rtType,
+        entity_id: incidentId,
+        data: {
+          old_value: e.old_value,
+          new_value: e.new_value,
+          actor_id: op.id,
+          actor_name: op.display_name,
+          note: e.note,
+          updated_at: updated.updated_at.toISOString(),
+        },
       })
     }
 

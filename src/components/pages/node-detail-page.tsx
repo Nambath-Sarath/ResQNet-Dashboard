@@ -9,6 +9,9 @@ import { StatusBadge } from '@/components/shared/status-badge'
 import { BatteryIndicator, LinkQualityBar } from '@/components/shared/battery-indicator'
 import { FreshnessLabel } from '@/components/shared/freshness-label'
 import { LoadingSkeleton, ErrorState, EmptyState } from '@/components/shared/state-views'
+import { DeploymentLockCard } from './deployment-lock-card'
+import { DynamicModuleGrid } from './dynamic-module-grid'
+import { NodeSimulatorPanel } from './node-simulator-panel'
 import {
   ArrowLeft,
   Radio,
@@ -259,41 +262,7 @@ export function NodeDetailPage({ nodeId }: { nodeId: string }) {
         {/* Location */}
         <TabsContent value="location" className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2">
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2 text-sm">
-                  <Lock className="h-4 w-4 text-muted-foreground" /> Locked deployment reference
-                </CardTitle>
-                <CardDescription className="text-xs">
-                  Set by an authorised technician. Separate from live GPS position.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-2.5 text-sm">
-                <Row label="Coordinates">
-                  <span className="font-mono text-xs">
-                    {formatCoord(node.deployment_lat, node.deployment_lon)}
-                  </span>
-                </Row>
-                <Row label="Accuracy">
-                  <span className="tabular-nums">
-                    {node.deployment_accuracy_m != null ? `±${node.deployment_accuracy_m} m` : '—'}
-                  </span>
-                </Row>
-                <Row label="Locked by">
-                  <span className="font-mono text-xs">{node.deployment_locked_by ?? '—'}</span>
-                </Row>
-                <Row label="Locked at">
-                  <span className="tabular-nums">{formatDateTime(node.deployment_locked_at)}</span>
-                </Row>
-                <div className="mt-3 flex items-start gap-2 rounded-md border border-warning/30 bg-warning/10 p-2.5 text-xs text-warning-foreground">
-                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                  <span>
-                    Updating the deployment reference requires confirmation and creates an audit
-                    entry. A displacement alert needs valid evidence — not a single noisy reading.
-                  </span>
-                </div>
-              </CardContent>
-            </Card>
+            <DeploymentLockCard node={node} />
 
             <Card>
               <CardHeader className="pb-3">
@@ -399,36 +368,20 @@ export function NodeDetailPage({ nodeId }: { nodeId: string }) {
               </CardContent>
             </Card>
           )}
+
+          <NodeSimulatorPanel nodeId={node.id} />
         </TabsContent>
 
         {/* Modules */}
         <TabsContent value="modules" className="space-y-4">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2 text-sm">
-                <Cpu className="h-4 w-4 text-muted-foreground" /> Discovered capabilities
-              </CardTitle>
-              <CardDescription className="text-xs">
-                Rendered only from validated capability reports. Never execute node-supplied code.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {node.modules.length === 0 ? (
-                <EmptyState
-                  title="No modules reported"
-                  description="The node has not submitted a valid capability report, or has no optional modules. Core node health and the deployment reference are still shown."
-                  icon={<Cpu className="h-6 w-6" />}
-                  className="py-8"
-                />
-              ) : (
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {node.modules.map((m) => (
-                    <ModuleCard key={m.id} module={m} />
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <div className="flex items-start gap-2 rounded-md border border-info/30 bg-info/5 p-2.5 text-xs text-muted-foreground">
+            <Cpu className="mt-0.5 h-3.5 w-3.5 shrink-0 text-info" />
+            <span>
+              Module controls are rendered from validated capability reports only. Unknown module types
+              are shown as <code>UNKNOWN</code> and their controls are suppressed. Node-supplied code is never executed.
+            </span>
+          </div>
+          <DynamicModuleGrid node={node} />
         </TabsContent>
 
         {/* Events */}

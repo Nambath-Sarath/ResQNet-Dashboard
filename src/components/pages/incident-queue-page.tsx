@@ -5,10 +5,10 @@ import { useIncidents, useOverview } from '@/lib/hooks'
 import { useAppStore } from '@/lib/store'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/shared/status-badge'
 import { FreshnessLabel } from '@/components/shared/freshness-label'
 import { LoadingSkeleton, EmptyState, ErrorState } from '@/components/shared/state-views'
+import { QuickIncidentComposer } from './quick-incident-composer'
 import {
   Siren,
   Search,
@@ -110,9 +110,7 @@ export function IncidentQueuePage() {
               <FreshnessLabel timestamp={overview.freshness.last_updated_at} />
             </span>
           )}
-          <Button size="sm" onClick={() => setView({ name: 'incidents' })}>
-            <Plus className="mr-1 h-4 w-4" /> New incident
-          </Button>
+          <QuickIncidentComposer />
         </div>
       </div>
 

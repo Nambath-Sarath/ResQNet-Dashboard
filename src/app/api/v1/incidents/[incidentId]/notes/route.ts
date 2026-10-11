@@ -1,5 +1,6 @@
 import { db } from '@/lib/db'
 import { requireOperator, handleError, audit, NotFoundError } from '@/lib/auth'
+import { publishEvent } from '@/lib/realtime'
 
 export const dynamic = 'force-dynamic'
 
@@ -41,6 +42,18 @@ export async function POST(req: Request, { params }: Params) {
       entity_type: 'incident',
       entity_id: incidentId,
       metadata: { note_id: note.id },
+    })
+
+    await publishEvent({
+      event_type: 'incident.note_added',
+      entity_id: incidentId,
+      data: {
+        note_id: note.id,
+        author_id: op.id,
+        author_name: op.display_name,
+        body_preview: noteText.slice(0, 80),
+        created_at: note.created_at.toISOString(),
+      },
     })
 
     return Response.json(

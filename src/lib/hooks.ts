@@ -211,3 +211,142 @@ export function useCreateIncident() {
     },
   })
 }
+
+// --- Node deployment + capabilities -----------------------------------------
+
+export function useLockDeployment() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      nodeId,
+      latitude,
+      longitude,
+      accuracy_m,
+      confirm,
+    }: {
+      nodeId: string
+      latitude: number
+      longitude: number
+      accuracy_m?: number
+      confirm?: boolean
+    }) =>
+      api.post(`/api/v1/nodes/${nodeId}/deployment`, {
+        latitude,
+        longitude,
+        accuracy_m,
+        confirm,
+      }),
+    onSuccess: (_d, { nodeId }) => {
+      qc.invalidateQueries({ queryKey: ['node', nodeId] })
+      qc.invalidateQueries({ queryKey: ['nodes'] })
+      qc.invalidateQueries({ queryKey: ['overview'] })
+    },
+  })
+}
+
+/**
+ * Simulate a node heartbeat from the dashboard (operator-initiated test).
+ * In production the node firmware posts directly; this is for QA/demo.
+ */
+export function useSimulateHeartbeat() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      nodeId,
+      nodeSecret,
+      payload,
+    }: {
+      nodeId: string
+      nodeSecret: string
+      payload: {
+        battery?: number
+        link_quality?: number
+        connected_clients?: number
+        uptime_seconds?: number
+        rssi?: number
+        location?: { latitude: number; longitude: number; accuracy_m?: number; source?: string }
+      }
+    }) =>
+      fetch(`/api/v1/nodes/${nodeId}/heartbeats`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-node-secret': nodeSecret,
+        },
+        body: JSON.stringify({
+          ...payload,
+          node_reported_at: new Date().toISOString(),
+        }),
+      }).then(async (r) => {
+        const body = await r.json().catch(() => ({}))
+        if (!r.ok) throw new ApiRequestError(body?.error?.message ?? 'heartbeat failed', body?.error?.code ?? 'UNKNOWN', r.status)
+        return body
+      }),
+    onSuccess: (_d, { nodeId }) => {
+      qc.invalidateQueries({ queryKey: ['node', nodeId] })
+      qc.invalidateQueries({ queryKey: ['nodes'] })
+      qc.invalidateQueries({ queryKey: ['overview'] })
+    },
+  })
+}
+
+/**
+ * Submit a capability report on behalf of a node (operator-initiated test).
+ */
+export function useSubmitCapabilities() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      nodeId,
+      nodeSecret,
+      descriptor,
+    }: {
+      nodeId: string
+      nodeSecret: string
+      descriptor: {
+        protocol_version?: string
+        firmware_version?: string
+        hardware_revision?: string
+        modules: Array<{
+          module_id: string
+          type: string
+          status: string
+          capabilities: string[]
+          firmware_version?: string
+        }>
+      }
+    }) =>
+      fetch(`/api/v1/nodes/${nodeId}/capabilities`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-node-secret': nodeSecret,
+        },
+        body: JSON.stringify(descriptor),
+      }).then(async (r) => {
+        const body = await r.json().catch(() => ({}))
+        if (!r.ok) throw new ApiRequestError(body?.error?.message ?? 'capability submit failed', body?.error?.code ?? 'UNKNOWN', r.status)
+        return body
+      }),
+    onSuccess: (_d, { nodeId }) => {
+      qc.invalidateQueries({ queryKey: ['node', nodeId] })
+      qc.invalidateQueries({ queryKey: ['nodes'] })
+    },
+  })
+}
+
+/**
+ * Fetch a node's auth_secret (admin only) — used to power the simulator panels.
+ */
+export function useNodeSecret(nodeId: string | null) {
+  return useQuery<{ auth_secret: string }>({
+    queryKey: ['node-secret', nodeId],
+    queryFn: async () => {
+      if (!nodeId) throw new Error('no nodeId')
+      const r = await fetch(`/api/v1/nodes/${nodeId}/secret`)
+      if (!r.ok) throw new ApiRequestError('Cannot fetch node secret', 'FORBIDDEN', r.status)
+      return r.json()
+    },
+    enabled: !!nodeId,
+  })
+}
