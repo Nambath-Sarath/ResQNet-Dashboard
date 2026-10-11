@@ -35,6 +35,7 @@ import { StatusBadge } from '@/components/shared/status-badge'
 import { FreshnessLabel } from '@/components/shared/freshness-label'
 import { LoadingSkeleton, ErrorState, EmptyState } from '@/components/shared/state-views'
 import { PrintableIncidentReport } from './printable-incident-report'
+import { DuplicateDetectionCard } from './duplicate-detection-card'
 import { toast } from 'sonner'
 import {
   ArrowLeft,
@@ -549,6 +550,9 @@ export function IncidentDetailPage({ incidentId }: { incidentId: string }) {
               </div>
             </CardContent>
           </Card>
+
+          {/* Duplicate detection */}
+          <DuplicateDetectionCard incidentId={incident.id} />
         </div>
       </div>
     </div>

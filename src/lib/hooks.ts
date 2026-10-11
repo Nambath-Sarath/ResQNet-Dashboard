@@ -703,3 +703,60 @@ export function useTrends(hours = 24) {
     refetchInterval: 60_000,
   })
 }
+
+// --- Batch incident actions + duplicate detection ---------------------------
+
+export function useBatchIncidentAction() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: {
+      action: 'acknowledge' | 'assign' | 'cancel'
+      incident_ids: string[]
+      assignee_id?: string
+      note?: string
+    }) => api.post<{
+      action: string
+      total: number
+      succeeded: number
+      failed: number
+      results: Array<{ incident_id: string; ok: boolean; error?: string; new_status?: string }>
+      note?: string
+    }>('/api/v1/incidents/batch', data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['incidents'] })
+      qc.invalidateQueries({ queryKey: ['overview'] })
+    },
+  })
+}
+
+export function useIncidentDuplicates(incidentId: string | null) {
+  return useQuery<{
+    incident_id: string
+    duplicates: Array<{
+      incident_id: string
+      category: string
+      priority: string
+      status: string
+      description: string
+      created_at: string
+      time_diff_minutes: number
+      location_lat: number | null
+      location_lon: number | null
+      distance_km: number | null
+      source_node_id: string | null
+      assignee: string | null
+      confidence: number
+      reasons: string[]
+    }>
+    total: number
+    note: string
+  }>({
+    queryKey: ['incident-duplicates', incidentId],
+    queryFn: () => {
+      if (!incidentId) throw new Error('no incidentId')
+      return api.get(`/api/v1/incidents/${incidentId}/duplicates`)
+    },
+    enabled: !!incidentId,
+    refetchInterval: 60_000,
+  })
+}

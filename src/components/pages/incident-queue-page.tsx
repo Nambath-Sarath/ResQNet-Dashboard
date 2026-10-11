@@ -1,15 +1,18 @@
 'use client'
 
 import { useState } from 'react'
-import { useIncidents, useOverview } from '@/lib/hooks'
+import { useIncidents, useOverview, useBatchIncidentAction, useOperators } from '@/lib/hooks'
 import { useAppStore } from '@/lib/store'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/shared/status-badge'
 import { FreshnessLabel } from '@/components/shared/freshness-label'
 import { LoadingSkeleton, EmptyState, ErrorState } from '@/components/shared/state-views'
 import { QuickIncidentComposer } from './quick-incident-composer'
 import { FilterPresetsBar } from './filter-presets-bar'
+import { BatchActionBar } from './batch-action-bar'
 import {
   Siren,
   Search,
@@ -52,6 +55,7 @@ export function IncidentQueuePage() {
   const [priority, setPriority] = useState('all')
   const [q, setQ] = useState('')
   const [activePresetId, setActivePresetId] = useState<string | null>(null)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
   const setView = useAppStore((s) => s.setView)
   const { data: overview } = useOverview()
   const { data, isLoading, isError, refetch } = useIncidents({
@@ -65,6 +69,26 @@ export function IncidentQueuePage() {
     setPriority(filters.priority ?? 'all')
     setQ(filters.q ?? '')
   }
+
+  const incidentIds = data?.incidents.map((i) => i.id) ?? []
+  const allSelected = incidentIds.length > 0 && selected.size === incidentIds.length
+  const someSelected = selected.size > 0 && !allSelected
+
+  const toggleSelect = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleSelectAll = () => {
+    if (allSelected) setSelected(new Set())
+    else setSelected(new Set(incidentIds))
+  }
+
+  const clearSelection = () => setSelected(new Set())
 
   return (
     <div className="space-y-4 p-4 sm:p-6">
@@ -130,6 +154,15 @@ export function IncidentQueuePage() {
         </div>
       </div>
 
+      {/* Batch action bar (shown when incidents are selected) */}
+      {selected.size > 0 && (
+        <BatchActionBar
+          selectedIds={Array.from(selected)}
+          onClear={clearSelection}
+          onComplete={clearSelection}
+        />
+      )}
+
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="flex items-center gap-2 text-base">
@@ -164,6 +197,14 @@ export function IncidentQueuePage() {
               <table className="w-full text-sm">
                 <thead className="border-b bg-muted/40 text-[10px] uppercase tracking-wider text-muted-foreground">
                   <tr>
+                    <th className="w-10 px-3 py-2.5 text-center">
+                      <Checkbox
+                        checked={allSelected}
+                        onCheckedChange={toggleSelectAll}
+                        aria-label="Select all incidents"
+                        className="mx-auto"
+                      />
+                    </th>
                     <th className="px-4 py-2.5 text-left font-medium">ID</th>
                     <th className="px-3 py-2.5 text-left font-medium">Cat</th>
                     <th className="px-3 py-2.5 text-left font-medium">Priority</th>
@@ -192,9 +233,24 @@ export function IncidentQueuePage() {
                     return (
                       <tr
                         key={inc.id}
-                        onClick={() => setView({ name: 'incident', incidentId: inc.id })}
-                        className="cursor-pointer border-b border-border/60 transition-colors last:border-0 hover:bg-accent/50"
+                        onClick={(e) => {
+                          // Don't navigate if the click was on the checkbox
+                          if ((e.target as HTMLElement).closest('button, [role="checkbox"]')) return
+                          setView({ name: 'incident', incidentId: inc.id })
+                        }}
+                        className={cn(
+                          'cursor-pointer border-b border-border/60 transition-colors last:border-0 hover:bg-accent/50',
+                          selected.has(inc.id) && 'bg-primary/5',
+                        )}
                       >
+                        <td className="px-3 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                          <Checkbox
+                            checked={selected.has(inc.id)}
+                            onCheckedChange={() => toggleSelect(inc.id)}
+                            aria-label={`Select ${inc.id}`}
+                            className="mx-auto"
+                          />
+                        </td>
                         <td className="px-4 py-3">
                           <span className="font-mono text-xs font-semibold">{inc.id}</span>
                         </td>

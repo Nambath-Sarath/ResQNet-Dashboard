@@ -337,3 +337,58 @@ Stage Summary:
 - All core spec (Phases 0-6) + 6 rounds of UX enhancements remain stable. This round added: (1) mobile responsiveness audit confirming all pages work on phone-size viewports with horizontal-scrolling tables where needed, (2) 3 accessibility aria-label fixes for topbar icon buttons, (3) saved filter presets system with 3 defaults + save/delete/pin + active-preset highlighting.
 - The dashboard now supports operator workflows on mobile (field use per spec §15) and reusable filter presets for common queries.
 - Next round could add: saved filter presets for other list pages (nodes, messages, audit), a dashboard analytics/insights panel, incident-merge/duplicate-detection tooling, or batch incident actions (acknowledge/assign multiple at once).
+
+---
+Task ID: stage-8
+Agent: main (Z.ai Code) — cron-triggered 15-minute review
+Task: Batch incident actions + duplicate detection. High-value operator-efficiency features for handling SOS floods.
+
+Work Log:
+- QA pass (Stages 1-7 stable): re-seeded DB, restarted dev server, agent-browser smoke test confirmed login → overview (6 nodes, 4 online, 2 critical) all working. No console errors. Lint clean.
+- Built batch incident actions API (`POST /api/v1/incidents/batch`):
+  - Accepts `action` (acknowledge/assign/cancel), `incident_ids[]`, optional `assignee_id`, optional `note`.
+  - Validates action type, non-empty array, max 100 incidents, assignee existence.
+  - Per-incident status-transition validation (can't acknowledge an already-resolved incident, etc.).
+  - Returns per-incident results `{incident_id, ok, error?, new_status?}` so the client can show partial failures.
+  - Each incident gets an audit entry (`incident.batch_acknowledge` etc.) + a realtime event publish.
+  - Batch writes are not in a single DB transaction (Prisma SQLite limitation) — partial failures are tracked per-incident.
+- Built duplicate detection API (`GET /api/v1/incidents/[id]/duplicates`):
+  - Finds candidates: same category, created within ±60 min.
+  - Scores each candidate (0-100) based on: same category (30), time proximity (5-40), location distance via Haversine (10-40), same source node (15), keyword overlap (5-20), same people_affected (10).
+  - Only returns candidates with confidence ≥35.
+  - Returns per-duplicate: incident_id, category, priority, status, description, created_at, time_diff_minutes, location, distance_km, source_node, assignee, confidence, reasons[].
+- Added `useBatchIncidentAction` + `useIncidentDuplicates` hooks.
+- Built `BatchActionBar` (`src/components/pages/batch-action-bar.tsx`): sticky floating bar that appears when incidents are selected. Contains:
+  - Selected count badge
+  - "Acknowledge all" / "Assign all" / "Cancel all" buttons
+  - Assign dialog with operator select + optional note
+  - Cancel confirmation alert (irreversible)
+  - Per-result toast (success / partial-failure with per-incident error summary)
+  - Clear button
+- Added multi-select checkboxes to the IncidentQueuePage table:
+  - "Select all" checkbox in the header
+  - Per-row checkbox with aria-label
+  - Selected rows highlighted with bg-primary/5
+  - Click-outside-checkbox row navigation preserved
+- Built `DuplicateDetectionCard` (`src/components/pages/duplicate-detection-card.tsx`): card for the incident detail page showing:
+  - Count badge of possible duplicates
+  - Per-duplicate row with circular confidence gauge (red ≥70, amber ≥50, muted <50)
+  - Reason chips with icons (clock for time, map-pin for distance, radio for source node, copy for keywords)
+  - Metadata row (time apart, distance, source node, assignee, created age)
+  - Click-to-navigate to the duplicate incident
+  - Disclaimer that confidence is a heuristic, not a definitive match
+- Added the DuplicateDetectionCard to the incident detail page right column (after the delivery-state card).
+- Fixed a parse error in the batch route (extra closing paren).
+
+Verification (agent-browser through Caddy gateway on port 81):
+- ✅ Incident queue has a new checkbox column with "Select all incidents" header checkbox + per-row checkboxes.
+- ✅ Clicking "Select all" selects all 10 incidents → batch action bar appears with "Acknowledge all/Assign all/Cancel all/Clear" buttons.
+- ✅ Clicked "Acknowledge all" → toast "Batch acknowledged: 10/10 incident(s) updated" → SOS-1042 status changed from "New" to "Acknowledged" in the queue.
+- ✅ API confirms 0 NEW incidents remaining after the batch acknowledge.
+- ✅ Duplicate detection: created a near-identical incident (same category/location/description/people) → navigated to SOS-1042 detail → "Possible duplicates" card shows SOS-1011 with confidence 100, reasons "same category, created 20m apart, 0m apart, 9 shared keywords, same people affected (2)", and the disclaimer.
+- ✅ No console errors. Lint clean. No dev-log errors.
+
+Stage Summary:
+- All core spec (Phases 0-6) + 7 rounds of UX enhancements remain stable. This round added 2 high-value operator-efficiency features: (1) batch incident actions (acknowledge/assign/cancel multiple at once with per-incident result tracking + audit + realtime publish), (2) heuristic duplicate detection with confidence scoring + reasons + click-to-navigate.
+- The dashboard now supports bulk operations (critical for SOS floods where dozens of similar reports arrive together) and surfaces possible duplicates to prevent redundant dispatch.
+- Next round could add: incident merge workflow (actually merge duplicates into one canonical record), saved filter presets for other list pages (nodes, messages, audit), dashboard analytics/insights panel, or operator activity heatmaps.
