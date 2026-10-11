@@ -56,6 +56,7 @@ export function CommandPalette() {
   const [selectedIndex, setSelectedIndex] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
+  const pendingShortcutRef = useRef<{ handler: (event: KeyboardEvent) => void; timeout: ReturnType<typeof setTimeout> } | null>(null)
   const setView = useAppStore((s) => s.setView)
 
   const isSearching = query.trim().length >= 2
@@ -79,6 +80,10 @@ export function CommandPalette() {
       }
       // Quick nav shortcuts: g o (overview), g i (incidents), etc.
       if (!open && e.key === 'g') {
+        if (pendingShortcutRef.current) {
+          window.removeEventListener('keydown', pendingShortcutRef.current.handler)
+          clearTimeout(pendingShortcutRef.current.timeout)
+        }
         // Set a flag for the next key
         const next = (e2: KeyboardEvent) => {
           const map: Record<string, DashboardView> = {
@@ -101,12 +106,30 @@ export function CommandPalette() {
             setView(v)
           }
           window.removeEventListener('keydown', next)
+          if (pendingShortcutRef.current?.handler === next) {
+            clearTimeout(pendingShortcutRef.current.timeout)
+            pendingShortcutRef.current = null
+          }
         }
         window.addEventListener('keydown', next, { once: true })
+        pendingShortcutRef.current = {
+          handler: next,
+          timeout: setTimeout(() => {
+            window.removeEventListener('keydown', next)
+            if (pendingShortcutRef.current?.handler === next) pendingShortcutRef.current = null
+          }, 1000),
+        }
       }
     }
     window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
+    return () => {
+      window.removeEventListener('keydown', handler)
+      if (pendingShortcutRef.current) {
+        window.removeEventListener('keydown', pendingShortcutRef.current.handler)
+        clearTimeout(pendingShortcutRef.current.timeout)
+        pendingShortcutRef.current = null
+      }
+    }
   }, [open, setView])
 
   // Focus input when opened

@@ -55,11 +55,12 @@ const KIND_SHAPES: Record<string, string> = {
   survivor: 'diamond',
   shelter: 'pentagon',
 }
+const DEFAULT_CENTER: [number, number] = [17.6868, 83.2185]
 
 /**
  * Lightweight Leaflet wrapper using refs (avoids react-leaflet's strict SSR).
  */
-export function LeafletMap({ markers, center = [17.6868, 83.2185], zoom = 13, onMarkerClick }: Props) {
+export function LeafletMap({ markers, center = DEFAULT_CENTER, zoom = 13, onMarkerClick }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<L.Map | null>(null)
   const groupRef = useRef<L.LayerGroup | null>(null)

@@ -35,7 +35,14 @@ async function request<T>(
   if (res.status === 204) return undefined as T
 
   const text = await res.text()
-  const body = text ? (JSON.parse(text) as unknown) : null
+  let body: unknown = null
+  if (text) {
+    try {
+      body = JSON.parse(text) as unknown
+    } catch {
+      body = null
+    }
+  }
 
   if (!res.ok) {
     const err = (body as { error?: ApiError } | null)?.error

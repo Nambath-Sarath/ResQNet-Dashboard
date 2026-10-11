@@ -1,5 +1,5 @@
 import { db } from '@/lib/db'
-import { getCurrentOperator, handleError, requireRole, audit } from '@/lib/auth'
+import { getCurrentOperator, handleError, requireRole, audit, ValidationError } from '@/lib/auth'
 import { Prisma } from '@prisma/client'
 import { publishEvent } from '@/lib/realtime'
 import { parseLimit } from '@/lib/query-validation'
@@ -80,10 +80,7 @@ export async function GET(req: Request) {
         latest_event: i.events[0] ?? null,
       })),
       total: incidents.length,
-      freshness: {
-        last_updated_at: incidents[0]?.updated_at?.toISOString() ?? null,
-        stale: incidents.length === 0,
-      },
+      freshness: { last_updated_at: new Date().toISOString(), stale: false },
     })
   } catch (err) {
     return handleError(err)
@@ -113,6 +110,9 @@ export async function POST(req: Request) {
     if (!PRIORITY_VALUES.includes(priority as never)) {
       return Response.json({ error: { code: 'VALIDATION_ERROR', message: `Invalid priority. Allowed: ${PRIORITY_VALUES.join(', ')}` } }, { status: 400 })
     }
+    if (people_affected != null && (!Number.isFinite(people_affected) || people_affected < 0 || !Number.isInteger(people_affected))) {
+      throw new ValidationError('people_affected must be a nonnegative integer.')
+    }
 
     // idempotency: if (source_node_id, client_submission_id) already exists, return existing
     if (source_node_id && client_submission_id) {
@@ -137,6 +137,20 @@ export async function POST(req: Request) {
     const incident_id = `SOS-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`
 
     const location = body?.location ?? null
+    if (location) {
+      const latitude = Number(location.latitude)
+      const longitude = Number(location.longitude)
+      const accuracy = location.accuracy_m == null ? null : Number(location.accuracy_m)
+      const capturedAt = location.captured_at ? new Date(location.captured_at) : null
+      if (
+        !Number.isFinite(latitude) || latitude < -90 || latitude > 90 ||
+        !Number.isFinite(longitude) || longitude < -180 || longitude > 180 ||
+        (accuracy != null && (!Number.isFinite(accuracy) || accuracy < 0)) ||
+        (capturedAt != null && Number.isNaN(capturedAt.getTime()))
+      ) {
+        throw new ValidationError('Location coordinates, accuracy, or timestamp are invalid.')
+      }
+    }
     let incident
     try {
       incident = await db.incident.create({

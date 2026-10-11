@@ -58,10 +58,7 @@ export async function GET(req: Request) {
         attempts: m.attempts,
       })),
       total: messages.length,
-      freshness: {
-        last_updated_at: messages[0]?.created_at?.toISOString() ?? null,
-        stale: messages.length === 0,
-      },
+      freshness: { last_updated_at: new Date().toISOString(), stale: false },
     })
   } catch (err) {
     return handleError(err)

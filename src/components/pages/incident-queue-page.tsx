@@ -71,8 +71,10 @@ export function IncidentQueuePage() {
   }
 
   const incidentIds = data?.incidents.map((i) => i.id) ?? []
-  const allSelected = incidentIds.length > 0 && selected.size === incidentIds.length
-  const someSelected = selected.size > 0 && !allSelected
+  const visibleIds = new Set(incidentIds)
+  const visibleSelected = new Set([...selected].filter((id) => visibleIds.has(id)))
+  const allSelected = incidentIds.length > 0 && visibleSelected.size === incidentIds.length
+  const someSelected = visibleSelected.size > 0 && !allSelected
 
   const toggleSelect = (id: string) => {
     setSelected((prev) => {
@@ -156,9 +158,9 @@ export function IncidentQueuePage() {
       </div>
 
       {/* Batch action bar (shown when incidents are selected) */}
-      {selected.size > 0 && (
+      {visibleSelected.size > 0 && (
         <BatchActionBar
-          selectedIds={Array.from(selected)}
+          selectedIds={Array.from(visibleSelected)}
           onClear={clearSelection}
           onComplete={clearSelection}
         />

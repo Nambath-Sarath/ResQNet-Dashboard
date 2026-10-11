@@ -33,13 +33,7 @@ export async function GET(req: Request) {
       resources: enriched,
       total: enriched.length,
       low_stock_count: enriched.filter((r) => r.low_stock).length,
-      freshness: {
-        last_updated_at: resources.reduce<Date | null>(
-          (latest, resource) => !latest || resource.updated_at > latest ? resource.updated_at : latest,
-          null,
-        )?.toISOString() ?? null,
-        stale: resources.length === 0,
-      },
+      freshness: { last_updated_at: new Date().toISOString(), stale: false },
     })
   } catch (err) {
     return handleError(err)

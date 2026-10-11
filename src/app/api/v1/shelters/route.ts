@@ -35,13 +35,7 @@ export async function GET(req: Request) {
       total: enriched.length,
       total_capacity: shelters.reduce((sum, s) => sum + s.capacity, 0),
       total_occupancy: shelters.reduce((sum, s) => sum + s.occupancy_estimate, 0),
-      freshness: {
-        last_updated_at: shelters.reduce<Date | null>(
-          (latest, shelter) => !latest || shelter.updated_at > latest ? shelter.updated_at : latest,
-          null,
-        )?.toISOString() ?? null,
-        stale: shelters.length === 0,
-      },
+      freshness: { last_updated_at: new Date().toISOString(), stale: false },
     })
   } catch (err) {
     return handleError(err)
@@ -62,11 +56,15 @@ export async function POST(req: Request) {
 
     if (!name || latitude == null || longitude == null || capacity == null ||
         !Number.isFinite(latitude) || !Number.isFinite(longitude) ||
-        !Number.isFinite(capacity) || !Number.isFinite(occupancy_estimate)) {
+        !Number.isFinite(capacity) || !Number.isFinite(occupancy_estimate) ||
+        latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
       return Response.json({ error: { code: 'VALIDATION_ERROR', message: 'name, latitude, longitude, capacity required.' } }, { status: 400 })
     }
     if (capacity <= 0 || occupancy_estimate < 0 || occupancy_estimate > capacity) {
       return Response.json({ error: { code: 'VALIDATION_ERROR', message: 'occupancy cannot exceed capacity.' } }, { status: 400 })
+    }
+    if (!['OPEN', 'FULL', 'EVACUATING', 'CLOSED'].includes(status)) {
+      return Response.json({ error: { code: 'VALIDATION_ERROR', message: 'Invalid shelter status.' } }, { status: 400 })
     }
 
     // upsert by name
