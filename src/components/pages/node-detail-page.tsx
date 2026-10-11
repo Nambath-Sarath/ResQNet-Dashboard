@@ -11,6 +11,7 @@ import { FreshnessLabel } from '@/components/shared/freshness-label'
 import { LoadingSkeleton, ErrorState, EmptyState } from '@/components/shared/state-views'
 import { DeploymentLockCard } from './deployment-lock-card'
 import { DynamicModuleGrid } from './dynamic-module-grid'
+import { NodeHealthChart } from './node-health-chart'
 import { NodeSimulatorPanel } from './node-simulator-panel'
 import {
   ArrowLeft,
@@ -257,6 +258,11 @@ export function NodeDetailPage({ nodeId }: { nodeId: string }) {
               </CardContent>
             </Card>
           </div>
+
+          {/* Health trend chart */}
+          {node.heartbeat_history.length >= 2 && (
+            <NodeHealthChart heartbeats={node.heartbeat_history} />
+          )}
         </TabsContent>
 
         {/* Location */}

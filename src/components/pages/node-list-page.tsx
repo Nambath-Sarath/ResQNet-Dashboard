@@ -5,6 +5,7 @@ import { useNodes, useOverview } from '@/lib/hooks'
 import { useAppStore } from '@/lib/store'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { FilterPresetsBar } from './filter-presets-bar'
 import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/shared/status-badge'
 import { BatteryIndicator, LinkQualityBar } from '@/components/shared/battery-indicator'
@@ -47,6 +48,7 @@ const STATUS_FILTERS: { value: string; label: string; tone: 'muted' | 'success' 
 export function NodeListPage() {
   const [status, setStatus] = useState<string>('all')
   const [q, setQ] = useState('')
+  const [activePresetId, setActivePresetId] = useState<string | null>(null)
   const setView = useAppStore((s) => s.setView)
   const { data: overview } = useOverview()
   const { data, isLoading, isError, refetch } = useNodes({
@@ -54,8 +56,22 @@ export function NodeListPage() {
     q: q || undefined,
   })
 
+  const applyPreset = (filters: { status?: string; q?: string }) => {
+    setStatus(filters.status ?? 'all')
+    setQ(filters.q ?? '')
+  }
+
   return (
     <div className="space-y-4 p-4 sm:p-6">
+      {/* Saved filter presets */}
+      <FilterPresetsBar
+        type="node"
+        currentFilters={{ status, q }}
+        onApply={applyPreset}
+        activePresetId={activePresetId}
+        onActiveChange={setActivePresetId}
+      />
+
       {/* Filter bar */}
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative flex-1 min-w-[200px] max-w-md">

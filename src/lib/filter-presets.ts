@@ -4,12 +4,11 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
 /**
- * Saved filter presets for the incident queue.
+ * Generic saved filter presets store.
  *
- * Operators often apply the same filters repeatedly (e.g. "My critical open
- * incidents", "Unacknowledged SOS in the last hour"). This store persists
- * named filter combinations to localStorage so they can be recalled with one
- * click.
+ * Operators often apply the same filters repeatedly. This store persists named
+ * filter combinations to localStorage so they can be recalled with one click.
+ * Supports multiple page types: incidents, nodes, messages, audit.
  */
 
 export type IncidentFilter = {
@@ -19,22 +18,46 @@ export type IncidentFilter = {
   q?: string
 }
 
+export type NodeFilter = {
+  status?: string
+  lifecycle?: string
+  q?: string
+}
+
+export type MessageFilter = {
+  status?: string
+  destination?: string
+  q?: string
+}
+
+export type AuditFilter = {
+  action?: string
+  entity_type?: string
+  actor_id?: string
+  q?: string
+}
+
+export type FilterType = 'incident' | 'node' | 'message' | 'audit'
+export type AnyFilter = IncidentFilter | NodeFilter | MessageFilter | AuditFilter
+
 export type FilterPreset = {
   id: string
   name: string
   description: string
-  filters: IncidentFilter
+  type: FilterType
+  filters: AnyFilter
   created_at: string
   pinned?: boolean
 }
 
 type PresetState = {
   presets: FilterPreset[]
-  addPreset: (name: string, description: string, filters: IncidentFilter) => string
+  addPreset: (type: FilterType, name: string, description: string, filters: AnyFilter) => string
   removePreset: (id: string) => void
   renamePreset: (id: string, name: string) => void
   togglePin: (id: string) => void
-  hasPreset: (name: string) => boolean
+  hasPreset: (type: FilterType, name: string) => boolean
+  getPresets: (type: FilterType) => FilterPreset[]
 }
 
 function genId() {
@@ -44,28 +67,73 @@ function genId() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36)
 }
 
-// A few sensible defaults so the preset bar isn't empty on first use
 const DEFAULT_PRESETS: FilterPreset[] = [
   {
-    id: 'default-critical',
+    id: 'default-incident-critical',
     name: 'Critical unacknowledged',
     description: 'CRITICAL priority, NEW status',
-    filters: { priority: 'CRITICAL', status: 'NEW' },
+    type: 'incident',
+    filters: { priority: 'CRITICAL', status: 'NEW' } as IncidentFilter,
     created_at: '2026-10-11T00:00:00.000Z',
     pinned: true,
   },
   {
-    id: 'default-open',
+    id: 'default-incident-open',
     name: 'All open',
     description: 'All non-resolved incidents',
-    filters: { status: 'all' },
+    type: 'incident',
+    filters: { status: 'all' } as IncidentFilter,
     created_at: '2026-10-11T00:00:00.000Z',
   },
   {
-    id: 'default-rescue',
+    id: 'default-incident-rescue',
     name: 'Rescue only',
     description: 'Rescue category, any status',
-    filters: { category: 'RESCUE' },
+    type: 'incident',
+    filters: { category: 'RESCUE' } as IncidentFilter,
+    created_at: '2026-10-11T00:00:00.000Z',
+  },
+  {
+    id: 'default-node-online',
+    name: 'Online nodes',
+    description: 'Only currently online nodes',
+    type: 'node',
+    filters: { status: 'online' } as NodeFilter,
+    created_at: '2026-10-11T00:00:00.000Z',
+    pinned: true,
+  },
+  {
+    id: 'default-node-offline',
+    name: 'Offline / stale',
+    description: 'Nodes needing attention',
+    type: 'node',
+    filters: { status: 'offline' } as NodeFilter,
+    created_at: '2026-10-11T00:00:00.000Z',
+  },
+  {
+    id: 'default-message-queued',
+    name: 'Queued messages',
+    description: 'Messages waiting for node reconnect',
+    type: 'message',
+    filters: { status: 'QUEUED_FOR_NODE' } as MessageFilter,
+    created_at: '2026-10-11T00:00:00.000Z',
+    pinned: true,
+  },
+  {
+    id: 'default-audit-incident',
+    name: 'Incident actions',
+    description: 'Audit entries for incident lifecycle',
+    type: 'audit',
+    filters: { entity_type: 'incident' } as AuditFilter,
+    created_at: '2026-10-11T00:00:00.000Z',
+    pinned: true,
+  },
+  {
+    id: 'default-audit-node',
+    name: 'Node actions',
+    description: 'Audit entries for node operations',
+    type: 'audit',
+    filters: { entity_type: 'node' } as AuditFilter,
     created_at: '2026-10-11T00:00:00.000Z',
   },
 ]
@@ -75,12 +143,13 @@ export const useFilterPresets = create<PresetState>()(
     (set, get) => ({
       presets: DEFAULT_PRESETS,
 
-      addPreset: (name, description, filters) => {
+      addPreset: (type, name, description, filters) => {
         const id = genId()
         const preset: FilterPreset = {
           id,
           name,
           description,
+          type,
           filters,
           created_at: new Date().toISOString(),
         }
@@ -100,7 +169,10 @@ export const useFilterPresets = create<PresetState>()(
           presets: s.presets.map((p) => (p.id === id ? { ...p, pinned: !p.pinned } : p)),
         })),
 
-      hasPreset: (name) => get().presets.some((p) => p.name.toLowerCase() === name.toLowerCase()),
+      hasPreset: (type, name) =>
+        get().presets.some((p) => p.type === type && p.name.toLowerCase() === name.toLowerCase()),
+
+      getPresets: (type) => get().presets.filter((p) => p.type === type),
     }),
     { name: 'resqnet-filter-presets' },
   ),

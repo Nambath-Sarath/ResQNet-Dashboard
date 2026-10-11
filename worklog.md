@@ -485,3 +485,44 @@ Stage Summary:
 - All core spec (Phases 0-6) + 9 rounds of UX enhancements remain stable. This round added 2 features: (1) operator activity heatmap (7×24 day×hour grid with per-operator filtering + intensity coloring) for shift scheduling, (2) survivor merge workflow (select 2 → merge duplicate into canonical → copy notes → audit → realtime) paralleling the incident merge.
 - The dashboard now provides visual coverage analysis (heatmap) and full duplicate-merge workflows for both incidents and survivors.
 - Next round could add: dashboard analytics/insights panel with charts, saved filter presets for nodes/messages/audit pages, operator shift scheduling UI, or a node-health history chart.
+
+---
+Task ID: stage-11
+Agent: main (Z.ai Code) — cron-triggered 15-minute review
+Task: Node health history chart + extend saved filter presets to nodes/messages/audit pages.
+
+Work Log:
+- QA pass (Stages 1-10 stable): re-seeded DB, restarted dev server, agent-browser smoke test confirmed login → overview (6 nodes, 4 online, 2 critical) all working. No console errors. Lint clean.
+- Built `NodeHealthChart` (`src/components/pages/node-health-chart.tsx`): SVG line chart showing a node's battery + link-quality trend from heartbeat history.
+  - Battery line (solid, success-colored) with area gradient fill.
+  - Link-quality line (dashed, info-colored).
+  - Data-point circles at each reading.
+  - Y-axis grid lines + labels at 0/25/50/75/100.
+  - X-axis time labels (first + last reading relative time).
+  - Right-side panel with latest battery/link values + trend indicators (+/- per hour, colored red if declining fast).
+  - Legend (solid=battery, dashed=link).
+  - Only renders when there are ≥2 heartbeat readings (otherwise hidden).
+- Added the NodeHealthChart to the node detail Overview tab (after the health snapshot + heartbeat history grid).
+- Generalized the filter-presets store to support multiple page types:
+  - Added `FilterType` = 'incident' | 'node' | 'message' | 'audit'.
+  - Added `NodeFilter`, `MessageFilter`, `AuditFilter` types.
+  - Updated `addPreset`/`hasPreset`/`getPresets` to take a `type` parameter.
+  - Added 5 new default presets: "Online nodes" (pinned), "Offline / stale" (node), "Queued messages" (pinned, message), "Incident actions" (pinned, audit), "Node actions" (audit).
+- Updated `FilterPresetsBar` to accept a `type` prop + filter presets by type.
+- Updated `IncidentQueuePage` to pass `type="incident"`.
+- Added `FilterPresetsBar` to `NodeListPage` (type="node") with applyPreset handler.
+- Added `FilterPresetsBar` to `MessagesPage` (type="message") with applyPreset handler.
+- Added `FilterPresetsBar` to `AuditLogPage` (type="audit") with applyPreset handler.
+
+Verification (agent-browser through Caddy gateway on port 81):
+- ✅ Node detail Overview tab renders new "Health trend" card with SVG chart (battery solid line + link dashed line + data points + grid + latest values panel + trend indicators).
+- ✅ Node list shows new filter presets bar with "Online nodes" (pinned) + "Offline / stale" defaults + "Save current" button.
+- ✅ Clicked "Online nodes" preset → status filter applied (showed Online + Stale buttons, filtered to online nodes).
+- ✅ Audit log shows new filter presets bar with "Incident actions" (pinned) + "Node actions" defaults + "Save current" button.
+- ✅ Clicked "Incident actions" preset → audit log filtered to only incident-related entries (incident.acknowledge, incident.assign).
+- ✅ No console errors. Lint clean. No dev-log errors.
+
+Stage Summary:
+- All core spec (Phases 0-6) + 10 rounds of UX enhancements remain stable. This round added: (1) node health history chart (SVG line chart for battery + link quality trends with trend indicators), (2) generalized filter-presets store extended to nodes/messages/audit pages with 5 new default presets.
+- The dashboard now provides visual trend analysis for node health (spot degrading trends before failure) and consistent saved-filter-preset UX across all 4 major list pages (incidents, nodes, messages, audit).
+- Next round could add: dashboard analytics/insights panel with charts, operator shift scheduling UI, message broadcast templates, or a survivor detail page.

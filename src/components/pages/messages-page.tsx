@@ -5,6 +5,7 @@ import { useMessages, useCreateMessage } from '@/lib/hooks'
 import { useAppStore } from '@/lib/store'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { FilterPresetsBar } from './filter-presets-bar'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
@@ -60,6 +61,7 @@ export function MessagesPage() {
   const [status, setStatus] = useState('all')
   const [q, setQ] = useState('')
   const [open, setOpen] = useState(false)
+  const [activePresetId, setActivePresetId] = useState<string | null>(null)
   const { data, isLoading, isError, refetch } = useMessages({
     status: status !== 'all' ? status : undefined,
     q: q || undefined,
@@ -69,6 +71,11 @@ export function MessagesPage() {
   const [destination, setDestination] = useState('broadcast')
   const [body, setBody] = useState('')
   const [messageType, setMessageType] = useState('text')
+
+  const applyPreset = (filters: { status?: string; q?: string }) => {
+    setStatus(filters.status ?? 'all')
+    setQ(filters.q ?? '')
+  }
 
   const submit = () => {
     if (!destination.trim() || !body.trim()) {
@@ -90,6 +97,15 @@ export function MessagesPage() {
 
   return (
     <div className="space-y-4 p-4 sm:p-6">
+      {/* Saved filter presets */}
+      <FilterPresetsBar
+        type="message"
+        currentFilters={{ status, q }}
+        onApply={applyPreset}
+        activePresetId={activePresetId}
+        onActiveChange={setActivePresetId}
+      />
+
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative flex-1 min-w-[200px] max-w-md">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useFilterPresets, type IncidentFilter } from '@/lib/filter-presets'
+import { useFilterPresets, type AnyFilter, type FilterType } from '@/lib/filter-presets'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -19,8 +19,9 @@ import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 
 type Props = {
-  currentFilters: IncidentFilter
-  onApply: (filters: IncidentFilter) => void
+  type: FilterType
+  currentFilters: AnyFilter
+  onApply: (filters: AnyFilter) => void
   activePresetId?: string | null
   onActiveChange?: (id: string | null) => void
 }
@@ -30,29 +31,31 @@ type Props = {
  * Operators click a chip to apply that preset, or save the current filter
  * combination as a new preset.
  */
-export function FilterPresetsBar({ currentFilters, onApply, activePresetId, onActiveChange }: Props) {
+export function FilterPresetsBar({ type, currentFilters, onApply, activePresetId, onActiveChange }: Props) {
   const { presets, addPreset, removePreset, togglePin } = useFilterPresets()
   const [saveOpen, setSaveOpen] = useState(false)
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
 
-  // Sort: pinned first, then by name
-  const sorted = [...presets].sort((a, b) => {
-    if (a.pinned && !b.pinned) return -1
-    if (!a.pinned && b.pinned) return 1
-    return a.name.localeCompare(b.name)
-  })
+  // Filter to this page type + sort: pinned first, then by name
+  const sorted = presets
+    .filter((p) => p.type === type)
+    .sort((a, b) => {
+      if (a.pinned && !b.pinned) return -1
+      if (!a.pinned && b.pinned) return 1
+      return a.name.localeCompare(b.name)
+    })
 
   const handleSave = () => {
     if (!name.trim()) {
       toast.error('Preset name is required.')
       return
     }
-    if (useFilterPresets.getState().hasPreset(name)) {
+    if (useFilterPresets.getState().hasPreset(type, name)) {
       toast.error(`A preset named "${name}" already exists.`)
       return
     }
-    const id = addPreset(name.trim(), description.trim(), currentFilters)
+    const id = addPreset(type, name.trim(), description.trim(), currentFilters)
     toast.success(`Preset "${name}" saved.`)
     setSaveOpen(false)
     setName('')

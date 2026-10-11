@@ -94,6 +94,7 @@ export function IncidentQueuePage() {
     <div className="space-y-4 p-4 sm:p-6">
       {/* Saved filter presets */}
       <FilterPresetsBar
+        type="incident"
         currentFilters={{ status, priority, q }}
         onApply={applyPreset}
         activePresetId={activePresetId}

@@ -5,6 +5,7 @@ import { useAuditLogs } from '@/lib/hooks'
 import { useAppStore } from '@/lib/store'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { FilterPresetsBar } from './filter-presets-bar'
 import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/shared/status-badge'
 import { LoadingSkeleton, EmptyState, ErrorState, ForbiddenState } from '@/components/shared/state-views'
@@ -26,6 +27,7 @@ export function AuditLogPage() {
   const [entityType, setEntityType] = useState('all')
   const [actorId, setActorId] = useState('')
   const [q, setQ] = useState('')
+  const [activePresetId, setActivePresetId] = useState<string | null>(null)
   const { data, isLoading, isError, refetch } = useAuditLogs({
     action: action || undefined,
     entity_type: entityType !== 'all' ? entityType : undefined,
@@ -37,6 +39,13 @@ export function AuditLogPage() {
     return <ForbiddenState className="m-6" />
   }
 
+  const applyPreset = (filters: { action?: string; entity_type?: string; actor_id?: string; q?: string }) => {
+    setAction(filters.action ?? '')
+    setEntityType(filters.entity_type ?? 'all')
+    setActorId(filters.actor_id ?? '')
+    setQ(filters.q ?? '')
+  }
+
   let filtered = data?.logs ?? []
   if (q) {
     filtered = filtered.filter(
@@ -46,6 +55,15 @@ export function AuditLogPage() {
 
   return (
     <div className="space-y-4 p-4 sm:p-6">
+      {/* Saved filter presets */}
+      <FilterPresetsBar
+        type="audit"
+        currentFilters={{ action, entity_type: entityType, actor_id: actorId, q }}
+        onApply={applyPreset}
+        activePresetId={activePresetId}
+        onActiveChange={setActivePresetId}
+      />
+
       <div className="flex items-center justify-between gap-2">
         <div>
           <h2 className="flex items-center gap-2 text-xl font-semibold tracking-tight">
