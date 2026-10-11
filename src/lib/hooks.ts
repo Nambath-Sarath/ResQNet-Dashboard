@@ -57,10 +57,26 @@ export function useLogout() {
   return useMutation<void, ApiRequestError, void>({
     mutationFn: () => api.delete('/api/v1/auth/logout').then(() => undefined),
     onSettled: () => {
+      // Clear the user from the store FIRST so the page transitions to login
       setUser(null)
       setView({ name: 'overview' })
+      // Set the auth cache to explicitly "not authenticated" — this drives
+      // the page.tsx auth gate to show the login page.
+      // Do NOT call qc.clear() here — it wipes the auth data we just set,
+      // causing a race where the page re-reads stale data.
       qc.setQueryData(['auth', 'me'], { authenticated: false })
-      qc.clear()
+      // Remove data queries (overview, nodes, incidents, etc.) but KEEP
+      // the auth query data so the page knows we're logged out.
+      qc.removeQueries({ queryKey: ['overview'] })
+      qc.removeQueries({ queryKey: ['nodes'] })
+      qc.removeQueries({ queryKey: ['incidents'] })
+      qc.removeQueries({ queryKey: ['survivors'] })
+      qc.removeQueries({ queryKey: ['messages'] })
+      qc.removeQueries({ queryKey: ['resources'] })
+      qc.removeQueries({ queryKey: ['shelters'] })
+      qc.removeQueries({ queryKey: ['audit-logs'] })
+      qc.removeQueries({ queryKey: ['operators'] })
+      qc.removeQueries({ queryKey: ['map'] })
     },
   })
 }
