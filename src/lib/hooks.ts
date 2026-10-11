@@ -811,3 +811,38 @@ export function useOperatorActivity(hours = 168) {
     refetchInterval: 60_000,
   })
 }
+
+// --- Operator heatmap + survivor merge -------------------------------------
+
+export function useOperatorHeatmap(days = 14) {
+  return useQuery<{
+    days: number
+    since: string
+    generated_at: string
+    matrix: number[][]
+    max: number
+    total_actions: number
+    operators: Array<{ id: string; display_name: string; role: string; total_actions: number }>
+    by_operator: Record<string, number[][]>
+    day_labels: string[]
+    note: string
+  }>({
+    queryKey: ['operator-heatmap', days],
+    queryFn: () => api.get(`/api/v1/reports/operators/heatmap?days=${days}`),
+    refetchInterval: 120_000,
+  })
+}
+
+export function useMergeSurvivor() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ canonicalId, duplicateId, note }: { canonicalId: string; duplicateId: string; note?: string }) =>
+      api.post<{ canonical_id: string; canonical_ref: string; duplicate_id: string; duplicate_ref: string; merged: boolean; note: string }>(
+        `/api/v1/survivors/${canonicalId}/merge`,
+        { duplicate_id: duplicateId, note },
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['survivors'] })
+    },
+  })
+}

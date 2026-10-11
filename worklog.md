@@ -433,3 +433,55 @@ Stage Summary:
 - All core spec (Phases 0-6) + 8 rounds of UX enhancements remain stable. This round added 2 operational-tooling features: (1) incident merge workflow (mark duplicate as DUPLICATE terminal status + link to canonical + copy notes with attribution + audit + realtime), (2) operator activity panel for load balancing (per-operator stats + active-incident chips + load-colored cards).
 - The dashboard now covers the full incident lifecycle including duplicate handling (detect → merge → audit), and provides coordinators with load-balancing visibility across the operator team.
 - Next round could add: saved filter presets for other list pages (nodes, messages, audit), dashboard analytics/insights panel with charts, operator activity heatmaps by hour-of-day, or a survivor-merge workflow similar to incident merge.
+
+---
+Task ID: stage-10
+Agent: main (Z.ai Code) — cron-triggered 15-minute review
+Task: Operator activity heatmap + survivor merge workflow. Continuing the operational tooling theme.
+
+Work Log:
+- QA pass (Stages 1-9 stable): re-seeded DB, restarted dev server, agent-browser smoke test confirmed login → overview (6 nodes, 4 online, 2 critical) all working. No console errors. Lint clean.
+- Built operator heatmap API (`GET /api/v1/reports/operators/heatmap?days=14`):
+  - Returns a 7×24 matrix (day-of-week 0=Sun..6=Sat, hour 0..23 UTC) of audit-log activity counts.
+  - Per-operator breakdown (`by_operator` map of operatorId → matrix) for filtering.
+  - Per-operator summary (id, display_name, role, total_actions) sorted by activity.
+  - Max value for color scaling.
+- Built survivor merge API (`POST /api/v1/survivors/[id]/merge`):
+  - Body: { duplicate_id, note? }
+  - Validates: duplicate_id required, can't merge into self, can't merge an already-closed survivor.
+  - Actions: (1) marks duplicate as 'closed' with a note linking to canonical, (2) appends canonical's notes with the duplicate's notes + merge note + timestamp, (3) two audit entries (survivor.merge + survivor.merged_into), (4) two realtime event publishes.
+  - Returns { canonical_id, canonical_ref, duplicate_id, duplicate_ref, merged: true, note }.
+- Added `useOperatorHeatmap` + `useMergeSurvivor` hooks.
+- Built `OperatorHeatmap` (`src/components/pages/operator-heatmap.tsx`):
+  - 7×24 grid with day labels (Sun..Sat) + hour labels (0..23, every 3rd shown).
+  - Color intensity: 4 tiers (bg-muted/40 for 0, bg-info/20→/40→/60→/full for increasing counts).
+  - Per-cell tooltip showing "Day HH:00 — N actions".
+  - Operator filter dropdown (All operators + each operator with their action count).
+  - Time-range selector (7/14/30/90 days).
+  - Legend (Less → More) + total-actions summary.
+- Added the OperatorHeatmap to the Reports page (after the OperatorActivityPanel).
+- Built `SurvivorMergeBar` (`src/components/pages/survivor-merge-bar.tsx`):
+  - Sticky bar that appears when exactly 2 survivors are selected.
+  - Shows canonical (first-selected, green badge) + duplicate (second-selected, red badge) refs.
+  - Merge button opens a confirmation dialog with side-by-side canonical/duplicate cards + optional merge note.
+  - On confirm: calls the merge API, invalidates the survivors query, shows success toast.
+- Added multi-select checkboxes to the Survivor Registry table:
+  - "MERGE" column header.
+  - Per-row checkbox with aria-label + disabled state for closed survivors.
+  - Selection limited to 2 (selecting a 3rd replaces the oldest).
+  - Selected rows highlighted with bg-primary/5.
+  - SurvivorMergeBar wired in (shown only when exactly 2 are selected).
+
+Verification (agent-browser through Caddy gateway on port 81):
+- ✅ Reports page shows new "Activity heatmap" card with 7×24 grid (168 cells with tooltips), day labels (Sun/Mon/Tue...), legend (Less→More), operator filter dropdown, time-range selector.
+- ✅ Survivor Registry has a new "MERGE" column with per-row checkboxes (disabled for closed survivors).
+- ✅ Selected SRV-004 + SRV-003 → merge bar appeared with "2 survivors selected for merge" + canonical: SRV-004 + duplicate: SRV-003 + Merge button.
+- ✅ Clicked Merge → dialog opened with title "Merge SRV-003 into SRV-004" + side-by-side canonical/duplicate cards + merge-note field.
+- ✅ Clicked "Merge survivor" → toast "Merged SRV-003 into SRV-004. The duplicate is now closed."
+- ✅ API confirms: SRV-003 status=closed, notes="Merged into SRV-004"; SRV-004 notes="[Merged SRV-003 on 2026-10-11T13:25:50.079Z]".
+- ✅ No console errors. Lint clean. No dev-log errors.
+
+Stage Summary:
+- All core spec (Phases 0-6) + 9 rounds of UX enhancements remain stable. This round added 2 features: (1) operator activity heatmap (7×24 day×hour grid with per-operator filtering + intensity coloring) for shift scheduling, (2) survivor merge workflow (select 2 → merge duplicate into canonical → copy notes → audit → realtime) paralleling the incident merge.
+- The dashboard now provides visual coverage analysis (heatmap) and full duplicate-merge workflows for both incidents and survivors.
+- Next round could add: dashboard analytics/insights panel with charts, saved filter presets for nodes/messages/audit pages, operator shift scheduling UI, or a node-health history chart.

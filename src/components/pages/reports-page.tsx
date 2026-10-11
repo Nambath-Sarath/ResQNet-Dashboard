@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button'
 import { LoadingSkeleton, ErrorState, EmptyState, ForbiddenState } from '@/components/shared/state-views'
 import { OperatorActivityPanel } from './operator-activity-panel'
+import { OperatorHeatmap } from './operator-heatmap'
 import {
   Select,
   SelectContent,
@@ -187,6 +188,9 @@ export function ReportsPage() {
 
           {/* Operator activity */}
           <OperatorActivityPanel />
+
+          {/* Operator heatmap */}
+          <OperatorHeatmap />
 
           {/* Incident list */}
           <Card>

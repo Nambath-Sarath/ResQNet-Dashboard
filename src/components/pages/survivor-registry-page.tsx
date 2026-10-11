@@ -6,9 +6,11 @@ import { useAppStore } from '@/lib/store'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { StatusBadge } from '@/components/shared/status-badge'
 import { FreshnessLabel } from '@/components/shared/freshness-label'
 import { LoadingSkeleton, EmptyState, ErrorState, ForbiddenState } from '@/components/shared/state-views'
+import { SurvivorMergeBar } from './survivor-merge-bar'
 import { Users, Search, ShieldOff, MapPin, ChevronRight, Eye, EyeOff } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { timeAgo, formatDateTime, formatCoord } from '@/lib/format'
@@ -24,12 +26,25 @@ export function SurvivorRegistryPage() {
   const [status, setStatus] = useState('all')
   const [q, setQ] = useState('')
   const [showContact, setShowContact] = useState(true)
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
   const { data, isLoading, isError, refetch } = useSurvivors({
     status: status !== 'all' ? status : undefined,
     q: q || undefined,
   })
   const user = useAppStore((s) => s.user)
   const canSeeContact = data?.can_see_contact ?? false
+
+  const selectedSurvivors = (data?.survivors ?? []).filter((s) => selectedIds.includes(s.id))
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      if (prev.includes(id)) return prev.filter((x) => x !== id)
+      if (prev.length >= 2) return [prev[1], id] // keep only last 2
+      return [...prev, id]
+    })
+  }
+
+  const clearSelection = () => setSelectedIds([])
 
   if (!canSeeContact && !isLoading) {
     // Viewers and node technicians cannot see contact info but can still see the registry
@@ -88,6 +103,13 @@ export function SurvivorRegistryPage() {
         </div>
       )}
 
+      {/* Survivor merge bar (shown when exactly 2 are selected) */}
+      <SurvivorMergeBar
+        selected={selectedSurvivors}
+        onClear={clearSelection}
+        onComplete={clearSelection}
+      />
+
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="flex items-center gap-2 text-base">
@@ -120,6 +142,9 @@ export function SurvivorRegistryPage() {
               <table className="w-full text-sm">
                 <thead className="border-b bg-muted/40 text-[10px] uppercase tracking-wider text-muted-foreground">
                   <tr>
+                    <th className="w-10 px-3 py-2.5 text-center">
+                      <span className="text-[9px] text-muted-foreground">merge</span>
+                    </th>
                     <th className="px-4 py-2.5 text-left font-medium">Reference</th>
                     <th className="px-3 py-2.5 text-left font-medium">Name</th>
                     <th className="hidden px-3 py-2.5 text-left font-medium sm:table-cell">Contact</th>
@@ -142,8 +167,20 @@ export function SurvivorRegistryPage() {
                     return (
                       <tr
                         key={s.id}
-                        className="cursor-pointer border-b border-border/60 transition-colors last:border-0 hover:bg-accent/50"
+                        className={cn(
+                          'border-b border-border/60 transition-colors last:border-0 hover:bg-accent/50',
+                          selectedIds.includes(s.id) && 'bg-primary/5',
+                        )}
                       >
+                        <td className="px-3 py-3 text-center">
+                          <Checkbox
+                            checked={selectedIds.includes(s.id)}
+                            onCheckedChange={() => toggleSelect(s.id)}
+                            aria-label={`Select ${s.temporary_ref} for merge`}
+                            className="mx-auto"
+                            disabled={s.status === 'closed'}
+                          />
+                        </td>
                         <td className="px-4 py-3">
                           <span className="font-mono text-xs font-semibold">{s.temporary_ref}</span>
                         </td>
