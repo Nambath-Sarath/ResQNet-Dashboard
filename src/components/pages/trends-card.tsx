@@ -43,6 +43,15 @@ export function TrendsCard({ hours = 24 }: { hours?: number }) {
         <div className="relative h-32">
           <svg viewBox={`0 0 ${data.incidents.length * 8} 100`} className="h-full w-full" preserveAspectRatio="none">
             {/* Stacked bars for each hour */}
+            <line
+              x1="0"
+              y1="100"
+              x2={data.incidents.length * 8}
+              y2="100"
+              stroke="var(--border)"
+              strokeWidth="1"
+              vectorEffect="non-scaling-stroke"
+            />
             {data.incidents.map((b, i) => {
               const h = (b.count / maxCount) * 100
               const critH = (b.critical / maxCount) * 100

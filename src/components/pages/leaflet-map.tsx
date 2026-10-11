@@ -88,13 +88,33 @@ export function LeafletMap({ markers, center = DEFAULT_CENTER, zoom = 13, onMark
     }).addTo(map)
     groupRef.current = L.layerGroup().addTo(map)
     mapRef.current = map
+    const resizeObserver = new ResizeObserver(() => map.invalidateSize({ animate: false }))
+    resizeObserver.observe(containerRef.current)
+    const invalidateAfterLayout = () => map.invalidateSize({ animate: false })
+    window.addEventListener('resize', invalidateAfterLayout)
+    const frame = requestAnimationFrame(invalidateAfterLayout)
+    const delayedFrame = requestAnimationFrame(() => requestAnimationFrame(invalidateAfterLayout))
 
     return () => {
+      cancelAnimationFrame(frame)
+      cancelAnimationFrame(delayedFrame)
+      resizeObserver.disconnect()
+      window.removeEventListener('resize', invalidateAfterLayout)
       map.remove()
       mapRef.current = null
       groupRef.current = null
     }
   }, [center, zoom])
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        requestAnimationFrame(() => mapRef.current?.invalidateSize({ animate: false }))
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [])
 
   // Update markers when they change.
   useEffect(() => {
@@ -112,7 +132,7 @@ export function LeafletMap({ markers, center = DEFAULT_CENTER, zoom = 13, onMark
       marker.on('click', () => onMarkerClickRef.current?.(m))
     }
 
-    if (markers.length > 0) {
+    if (markers.length > 0 && map.getContainer().offsetParent !== null) {
       const bounds = L.latLngBounds(markers.map((m) => [m.lat, m.lng] as [number, number]))
       map.fitBounds(bounds.pad(0.1), { maxZoom: 15, animate: true })
     }
