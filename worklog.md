@@ -250,3 +250,51 @@ Stage Summary:
 - All core spec (Phases 0-6) remains stable. This round added 3 high-value UX features beyond the spec: (1) Cmd+K command palette with global search + quick nav, (2) Overview trends chart with hourly incident volume + critical overlay, (3) printable incident report with print CSS.
 - The dashboard is now more operator-efficient: keyboard-first navigation, at-a-glance trends, and printable reports for offline handover.
 - Next round could add: keyboard shortcuts help dialog, mobile responsiveness polish across all pages, notification preferences per operator, or a dashboard analytics/insights panel.
+
+---
+Task ID: stage-6
+Agent: main (Z.ai Code) — cron-triggered 15-minute review
+Task: Audible alert system + keyboard shortcuts help + notification preferences. Enhancing operator awareness for critical events when they may be on another tab.
+
+Work Log:
+- QA pass (Stages 1-5 stable): re-seeded DB, restarted dev server, agent-browser smoke test confirmed login → overview (6 nodes, 4 online, 2 critical) → command palette (Cmd+K works) all functioning. No console errors. Lint clean.
+- Built audible alert engine (`src/lib/sound.ts`): Web Audio API with 5 distinct beep patterns:
+  - `critical_new`: 3 short high square-wave beeps (new CRITICAL incident)
+  - `displacement`: 2 long low sawtooth beeps (node moved beyond deployment ref)
+  - `offline`: 1 long descending sine tone (gateway health changed)
+  - `resolve`: 2 short pleasant sine tones (incident resolved)
+  - `message`: 1 short mid triangle tone (broadcast message)
+  Includes `unlockAudio()` to resume the AudioContext after a user gesture (browser autoplay policy).
+- Built notification preferences store (`src/lib/notif-prefs.ts`): zustand+persist store with:
+  - Master `soundEnabled` + `toastEnabled` toggles
+  - Per-event-type overrides (`soundOverrides`/`toastOverrides` maps of AlertKey→boolean|null)
+  - Volume slider (0..1)
+  - `shouldPlaySound(key)` / `shouldShowToast(key)` with sensible defaults (critical + displacement + offline get sound by default; created/resolved/acknowledged get toasts)
+  - `eventToAlertKey()` maps realtime event_type + data.priority → AlertKey
+  - `alertKeyToSound()` maps AlertKey → sound pattern name
+- Wired sound + notification prefs into `use-realtime.ts` `handleEvent`: on each realtime event, checks `shouldPlaySound` + `shouldShowToast` and calls `playAlert()` + shows toast accordingly. Skipped during replay to avoid floods.
+- Added Web Audio unlock listener to `DashboardShell` (browsers block audio until first user gesture — unlocks on first click/keydown).
+- Built `KeyboardShortcutsHelp` (`src/components/dashboard/keyboard-shortcuts-help.tsx`): `?` key opens a dialog documenting all 17 shortcuts (Cmd+K, ↑↓, Enter, Esc, g+letter combos, ?). Grouped by Navigation/Search/Actions categories. Includes a hint about configuring sound alerts in Settings.
+- Built `NotificationPreferences` (`src/components/pages/notification-preferences.tsx`): full settings panel with:
+  - 2 master toggle cards (Sound alerts / Toast notifications) with icons + descriptions
+  - Volume slider with percentage display
+  - Per-event-type matrix table (7 rows: critical SOS, high SOS, resolved, acknowledged, displacement, system health, message delivery) × 3 columns (Sound toggle / Toast toggle / Test button)
+  - Per-toggle ring outline indicator for custom overrides (click to reset to default)
+  - "Test all sounds" row with Critical/Displacement/Resolve buttons
+  - Reset-to-defaults button
+- Added "Notifications" tab to the Settings page (between Thresholds and Gateway).
+- Built `SoundToggleButton` in the TopBar: quick mute/unmute icon button (Volume2/VolumeX) with toast confirmation.
+- Wired `KeyboardShortcutsHelp` into `DashboardShell`.
+
+Verification (agent-browser through Caddy gateway on port 81):
+- ✅ Topbar shows new sound toggle button ("Mute sound alerts" with Volume2 icon).
+- ✅ Pressed `?` key → Keyboard shortcuts dialog opened with all 17 shortcuts grouped by category, including a note about sound alerts being configurable in Settings.
+- ✅ Navigated to Settings → Notifications tab renders with master toggles (Sound=on, Toast=on), Volume slider, per-event matrix (7 rows × 3 columns), and "Test all sounds" row.
+- ✅ Clicked "Test sound" button on "New critical SOS" row → no errors (sound plays in real browser but agent-browser can't verify audio).
+- ✅ Clicked sound mute toggle in topbar → button changed to "Enable sound alerts" (VolumeX icon) → master switch in Notifications synced to unchecked → re-enabled.
+- ✅ No console errors. Lint clean. No dev-log errors.
+
+Stage Summary:
+- All core spec (Phases 0-6) + prior UX enhancements (command palette, trends chart, printable report) remain stable. This round added 3 operator-awareness features: (1) Web Audio API audible alert system with 5 distinct beep patterns, (2) per-operator notification preferences with per-event-type sound/toast overrides + volume control, (3) keyboard shortcuts help dialog (? key) documenting all 17 shortcuts.
+- The dashboard now provides multi-modal alerts: visual (toast + banner), audible (beep patterns), and persistent (live event feed + write-queue panel). Operators can customize which events trigger which alert modality.
+- Next round could add: mobile responsiveness audit across all pages, saved filter presets for common operator workflows, a dashboard analytics/insights panel, or deeper incident-merge/duplicate-detection tooling.

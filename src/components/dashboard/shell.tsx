@@ -10,6 +10,8 @@ import { useNetworkMonitor } from '@/lib/use-network-monitor'
 import { RealtimeEventFeedButton } from './realtime-feed'
 import { OfflineBanner } from './offline-banner'
 import { CommandPalette } from './command-palette'
+import { KeyboardShortcutsHelp } from './keyboard-shortcuts-help'
+import { unlockAudio } from '@/lib/sound'
 import { useEffect } from 'react'
 import type { ReactNode } from 'react'
 
@@ -31,6 +33,21 @@ export function DashboardShell({ children }: { children: ReactNode }) {
     }
   }, [status, recentEvents, operatorsOnline])
 
+  // Unlock Web Audio on first user interaction (browser autoplay policy)
+  useEffect(() => {
+    const unlock = () => {
+      unlockAudio()
+      window.removeEventListener('click', unlock)
+      window.removeEventListener('keydown', unlock)
+    }
+    window.addEventListener('click', unlock, { once: true })
+    window.addEventListener('keydown', unlock, { once: true })
+    return () => {
+      window.removeEventListener('click', unlock)
+      window.removeEventListener('keydown', unlock)
+    }
+  }, [])
+
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <div className="flex flex-1 overflow-hidden">
@@ -46,6 +63,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
       </div>
       <Footer />
       <CommandPalette />
+      <KeyboardShortcutsHelp />
     </div>
   )
 }

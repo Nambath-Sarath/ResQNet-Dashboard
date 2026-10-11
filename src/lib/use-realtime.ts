@@ -6,6 +6,8 @@ import { useAppStore } from '@/lib/store'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { titleCase } from '@/lib/format'
+import { playAlert, unlockAudio } from '@/lib/sound'
+import { useNotifPrefs, eventToAlertKey, alertKeyToSound } from '@/lib/notif-prefs'
 
 export type RealtimeEvent = {
   event_id: string
@@ -132,15 +134,17 @@ export function useRealtime() {
         }
       }
 
-      // Toast only for high-signal events, and skip during replay to avoid floods
+      // Toast + sound only for high-signal events, and skip during replay to avoid floods
       if (!fromReplay) {
-        const important =
-          env.event_type === 'incident.created' ||
-          env.event_type === 'incident.resolved' ||
-          env.event_type === 'incident.cancelled' ||
-          env.event_type === 'node.displacement_warning'
+        const alertKey = eventToAlertKey(env.event_type, env.data)
+        const shouldToast = alertKey ? useNotifPrefs.getState().shouldShowToast(alertKey) : false
+        const shouldSound = alertKey ? useNotifPrefs.getState().shouldPlaySound(alertKey) : false
 
-        if (important) {
+        if (shouldSound && alertKey) {
+          playAlert(alertKeyToSound(alertKey))
+        }
+
+        if (shouldToast && alertKey) {
           const label = formatEventLabel(env.event_type)
           if (env.event_type === 'incident.created') {
             toast.success(`New SOS: ${env.entity_id}`, {
@@ -156,6 +160,12 @@ export function useRealtime() {
             toast.warning(`Displacement alert: ${env.entity_id}`, {
               description: 'Node moved beyond its deployment reference.',
             })
+          } else if (env.event_type === 'incident.resolved') {
+            toast.success(`Resolved: ${env.entity_id}`, {
+              description: 'Incident marked as resolved.',
+            })
+          } else if (env.event_type === 'system.health_changed') {
+            toast.info(label, { description: env.entity_id ?? 'Gateway health changed' })
           } else {
             toast.info(label, { description: env.entity_id ?? undefined })
           }

@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/shared/status-badge'
 import { LoadingSkeleton, EmptyState, ErrorState, ForbiddenState } from '@/components/shared/state-views'
+import { NotificationPreferences } from './notification-preferences'
 import {
   Dialog,
   DialogContent,
@@ -76,6 +77,7 @@ export function SettingsPage() {
         <TabsList>
           <TabsTrigger value="operators">Operators</TabsTrigger>
           <TabsTrigger value="thresholds">Thresholds</TabsTrigger>
+          <TabsTrigger value="notifications">Notifications</TabsTrigger>
           <TabsTrigger value="gateway">Gateway</TabsTrigger>
           <TabsTrigger value="backup">Backup</TabsTrigger>
         </TabsList>
@@ -110,6 +112,11 @@ export function SettingsPage() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* Notifications */}
+        <TabsContent value="notifications" className="space-y-4">
+          <NotificationPreferences />
         </TabsContent>
 
         {/* Gateway health */}

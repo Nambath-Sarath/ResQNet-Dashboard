@@ -15,6 +15,8 @@ import {
   Server,
   Clock,
   Search,
+  Volume2,
+  VolumeX,
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -28,6 +30,8 @@ import { useTheme } from 'next-themes'
 import { StatusBadge } from '@/components/shared/status-badge'
 import { FreshnessLabel } from '@/components/shared/freshness-label'
 import { ResilienceStatusPill } from '@/components/dashboard/resilience-status'
+import { useNotifPrefs } from '@/lib/notif-prefs'
+import { toast } from 'sonner'
 import { formatDateTime, titleCase } from '@/lib/format'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 
@@ -160,6 +164,9 @@ export function TopBar() {
           </svg>
         </Button>
 
+        {/* Sound mute toggle */}
+        <SoundToggleButton />
+
         {/* Theme */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -225,5 +232,31 @@ export function TopBar() {
         </DropdownMenu>
       </div>
     </header>
+  )
+}
+
+/**
+ * Quick mute/unmute toggle for sound alerts — shown in the topbar.
+ */
+function SoundToggleButton() {
+  const soundEnabled = useNotifPrefs((s) => s.soundEnabled)
+  const setSoundEnabled = useNotifPrefs((s) => s.setSoundEnabled)
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      onClick={() => {
+        const next = !soundEnabled
+        setSoundEnabled(next)
+        toast.success(next ? 'Sound alerts enabled.' : 'Sound alerts muted.')
+      }}
+      title={soundEnabled ? 'Mute sound alerts' : 'Enable sound alerts'}
+    >
+      {soundEnabled ? (
+        <Volume2 className="h-4 w-4" />
+      ) : (
+        <VolumeX className="h-4 w-4 text-muted-foreground" />
+      )}
+    </Button>
   )
 }
