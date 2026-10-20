@@ -7,6 +7,7 @@ import {
   classifyPortalReport,
   normalizePortalReport,
   parseCsvRecord,
+  parseResQnetTelemetry,
   peopleAffectedFromPortal,
 } from '@/lib/resqnet-gateway'
 
@@ -101,6 +102,70 @@ export async function POST(req: Request) {
       throw new ValidationError('payload must contain the portal CSV report and be at most 200 bytes.')
     }
 
+    // Sensor nodes send compact JSON telemetry through the same durable mesh queue.
+    // Upsert the latest module state, rather than appending one database row every 5 seconds.
+    if (payload.startsWith('{')) {
+      const telemetry = parseResQnetTelemetry(payload)
+      if (!telemetry) {
+        throw new ValidationError('JSON payload must be valid ResQnet sensor telemetry.')
+      }
+
+      await ensureSourceNode(sourceNodeId)
+      const now = new Date()
+      const gpsStatus = !telemetry.gpsSeen
+        ? 'NOT_DETECTED' as const
+        : telemetry.gpsFix ? 'PRESENT_ONLINE' as const : 'PRESENT_DEGRADED' as const
+      const imuStatus = telemetry.imuPresent ? 'PRESENT_ONLINE' as const : 'NOT_DETECTED' as const
+
+      await db.module.upsert({
+        where: { node_id_module_id: { node_id: sourceNodeId, module_id: 'gps' } },
+        create: {
+          node_id: sourceNodeId,
+          module_id: 'gps',
+          module_type: 'GPS',
+          status: gpsStatus,
+          capabilities: telemetry.gpsSeen ? 'nmea,location' : 'not_detected',
+          firmware_version: 'resqnet-telemetry-v1',
+          last_seen_at: telemetry.gpsSeen ? now : null,
+        },
+        update: {
+          status: gpsStatus,
+          capabilities: telemetry.gpsSeen ? 'nmea,location' : 'not_detected',
+          firmware_version: 'resqnet-telemetry-v1',
+          last_seen_at: telemetry.gpsSeen ? now : null,
+        },
+      })
+      await db.module.upsert({
+        where: { node_id_module_id: { node_id: sourceNodeId, module_id: 'imu' } },
+        create: {
+          node_id: sourceNodeId,
+          module_id: 'imu',
+          module_type: 'IMU',
+          status: imuStatus,
+          capabilities: telemetry.imuPresent ? 'accelerometer,gyroscope,motion' : 'not_detected',
+          firmware_version: 'resqnet-telemetry-v1',
+          last_seen_at: telemetry.imuPresent ? now : null,
+        },
+        update: {
+          status: imuStatus,
+          capabilities: telemetry.imuPresent ? 'accelerometer,gyroscope,motion' : 'not_detected',
+          firmware_version: 'resqnet-telemetry-v1',
+          last_seen_at: telemetry.imuPresent ? now : null,
+        },
+      })
+
+      return Response.json({
+        accepted: true,
+        duplicate: false,
+        telemetry: true,
+        source_node_id: sourceNodeId,
+        gateway_node_id: gatewayNodeId,
+        sequence,
+        modules_updated: 2,
+        updated_at: now,
+      })
+    }
+
     const fields = parseCsvRecord(payload)
     const report = fields ? normalizePortalReport(fields) : null
     if (!report) {
@@ -117,22 +182,7 @@ export async function POST(req: Request) {
     const lastHopRole = /^[A-Z_]{1,32}$/.test(lastHopRoleCandidate) ? lastHopRoleCandidate : null
     const clientSubmissionId = `${gatewayNodeId}:${sourceNodeId}:${sequence}`
 
-    // Reports from unknown origin nodes are registered as unprovisioned nodes
-    // so Incident.source_node_id can link to the origin. A random secret is
-    // generated for the record and is never returned by this endpoint.
-    await db.node.upsert({
-      where: { id: sourceNodeId },
-      create: {
-        id: sourceNodeId,
-        display_name: `ResQnet node ${sourceNodeId}`,
-        hardware_revision: 'ESP32',
-        firmware_version: 'ResQnet ESP-IDF',
-        protocol_version: '1.0',
-        auth_secret: randomUUID(),
-        lifecycle_state: 'REGISTERED',
-      },
-      update: {},
-    })
+    await ensureSourceNode(sourceNodeId)
 
     const existing = await db.incident.findFirst({
       where: { source_node_id: sourceNodeId, client_submission_id: clientSubmissionId },
