@@ -11,6 +11,7 @@ import {
 test('parses the 12-field captive-portal CSV including quoted commas and escaped quotes', () => {
   const parsed = parseCsvRecord('"Medical Emergency","A, B ""C""","1","Pregnancy emergency","Critical","","Water, medicine","need ""urgent"" help","false","","",""')
   assert.ok(parsed)
+  if (!parsed) throw new Error('expected parsed CSV')
   assert.equal(parsed.length, 12)
   assert.equal(parsed[1], 'A, B "C"')
   assert.equal(parsed[6], 'Water, medicine')
@@ -25,8 +26,10 @@ test('rejects malformed CSV quoting and unexpected field counts', () => {
 test('maps a phone medical report into validated portal fields', () => {
   const fields = parseCsvRecord('"Medical Emergency","Demo","4+","Severe bleeding","Critical","Trapped but safe","Water","Need help","false","","",""')
   assert.ok(fields)
+  if (!fields) throw new Error('expected fields')
   const report = normalizePortalReport(fields)
   assert.ok(report)
+  if (!report) throw new Error('expected normalized portal report')
   assert.equal(report.type, 'Medical Emergency')
   assert.equal(report.locationAvailable, false)
   assert.equal(report.latitude, null)
@@ -49,6 +52,7 @@ test('interprets people values with the portal 4+ option as a lower bound', () =
 test('accepts the compact MPU6500 telemetry JSON and converts fixed-point values', () => {
   const telemetry = parseResQnetTelemetry('{"kind":"telemetry","gps_seen":0,"fix":0,"lat_e6":null,"lon_e6":null,"imu":1,"moving":0,"ax_mg":12,"ay_mg":-5,"az_mg":1000,"gx_dps10":0,"gy_dps10":3,"gz_dps10":-2}')
   assert.ok(telemetry)
+  if (!telemetry) throw new Error('expected normalized telemetry')
   assert.equal(telemetry.imuPresent, true)
   assert.equal(telemetry.gpsSeen, false)
   assert.equal(telemetry.gpsFix, false)
