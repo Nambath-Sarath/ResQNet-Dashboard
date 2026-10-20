@@ -124,3 +124,83 @@ export function classifyPortalReport(reportType: string, injuryLevel: string): {
   if (type.includes('sos')) return { category: 'RESCUE', priority: 'CRITICAL' }
   return { category: 'OTHER', priority: 'MEDIUM' }
 }
+
+export type ResQnetTelemetry = {
+  gpsSeen: boolean
+  gpsFix: boolean
+  latitude: number | null
+  longitude: number | null
+  imuPresent: boolean
+  moving: boolean | null
+  axMg: number | null
+  ayMg: number | null
+  azMg: number | null
+  gxDps10: number | null
+  gyDps10: number | null
+  gzDps10: number | null
+}
+
+/** Decode the compact JSON telemetry emitted by the optional node sensor manager. */
+export function parseResQnetTelemetry(input: string): ResQnetTelemetry | null {
+  let value: unknown
+  try {
+    value = JSON.parse(input)
+  } catch {
+    return null
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const obj = value as Record<string, unknown>
+  if (obj.kind !== 'telemetry') return null
+
+  const bit = (candidate: unknown): boolean | null => {
+    if (candidate === 0 || candidate === false) return false
+    if (candidate === 1 || candidate === true) return true
+    return null
+  }
+  const gpsSeen = bit(obj.gps_seen)
+  const gpsFix = bit(obj.fix)
+  const imuPresent = bit(obj.imu)
+  const movingBit = obj.moving === null ? null : bit(obj.moving)
+  if (gpsSeen === null || gpsFix === null || imuPresent === null || (obj.moving !== null && movingBit === null)) return null
+
+  const integerOrNull = (candidate: unknown): number | null | undefined => {
+    if (candidate === null) return null
+    if (typeof candidate !== 'number' || !Number.isSafeInteger(candidate)) return undefined
+    return candidate
+  }
+  const latE6 = integerOrNull(obj.lat_e6)
+  const lonE6 = integerOrNull(obj.lon_e6)
+  if (latE6 === undefined || lonE6 === undefined || (latE6 === null) !== (lonE6 === null)) return null
+  if (gpsFix) {
+    if (latE6 === null || lonE6 === null || latE6 < -90_000_000 || latE6 > 90_000_000 || lonE6 < -180_000_000 || lonE6 > 180_000_000) return null
+  } else if (latE6 !== null || lonE6 !== null) {
+    return null
+  }
+
+  const optionalInteger = (key: string): number | null | undefined => {
+    if (!(key in obj)) return null
+    return integerOrNull(obj[key])
+  }
+  const axMg = optionalInteger('ax_mg')
+  const ayMg = optionalInteger('ay_mg')
+  const azMg = optionalInteger('az_mg')
+  const gxDps10 = optionalInteger('gx_dps10')
+  const gyDps10 = optionalInteger('gy_dps10')
+  const gzDps10 = optionalInteger('gz_dps10')
+  if ([axMg, ayMg, azMg, gxDps10, gyDps10, gzDps10].some((n) => n === undefined)) return null
+
+  return {
+    gpsSeen,
+    gpsFix,
+    latitude: gpsFix && latE6 !== null ? latE6 / 1_000_000 : null,
+    longitude: gpsFix && lonE6 !== null ? lonE6 / 1_000_000 : null,
+    imuPresent,
+    moving: movingBit,
+    axMg: axMg ?? null,
+    ayMg: ayMg ?? null,
+    azMg: azMg ?? null,
+    gxDps10: gxDps10 ?? null,
+    gyDps10: gyDps10 ?? null,
+    gzDps10: gzDps10 ?? null,
+  }
+}
