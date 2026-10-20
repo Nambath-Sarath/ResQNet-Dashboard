@@ -5,6 +5,7 @@ import {
   normalizePortalReport,
   parseCsvRecord,
   peopleAffectedFromPortal,
+  parseResQnetTelemetry,
 } from '../src/lib/resqnet-gateway'
 
 test('parses the 12-field captive-portal CSV including quoted commas and escaped quotes', () => {
@@ -42,4 +43,21 @@ test('interprets people values with the portal 4+ option as a lower bound', () =
   assert.equal(peopleAffectedFromPortal('2'), 2)
   assert.equal(peopleAffectedFromPortal(''), null)
   assert.equal(peopleAffectedFromPortal('many'), undefined)
+})
+
+
+test('accepts the compact MPU6500 telemetry JSON and converts fixed-point values', () => {
+  const telemetry = parseResQnetTelemetry('{"kind":"telemetry","gps_seen":0,"fix":0,"lat_e6":null,"lon_e6":null,"imu":1,"moving":0,"ax_mg":12,"ay_mg":-5,"az_mg":1000,"gx_dps10":0,"gy_dps10":3,"gz_dps10":-2}')
+  assert.ok(telemetry)
+  assert.equal(telemetry.imuPresent, true)
+  assert.equal(telemetry.gpsSeen, false)
+  assert.equal(telemetry.gpsFix, false)
+  assert.equal(telemetry.moving, false)
+  assert.equal(telemetry.axMg, 12)
+  assert.equal(telemetry.latitude, null)
+})
+
+test('rejects invalid sensor telemetry instead of accepting malformed payloads', () => {
+  assert.equal(parseResQnetTelemetry('{"kind":"telemetry","gps_seen":1,"fix":1,"lat_e6":null,"lon_e6":null,"imu":0,"moving":null}'), null)
+  assert.equal(parseResQnetTelemetry('{"kind":"unknown"}'), null)
 })
