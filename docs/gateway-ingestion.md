@@ -1,75 +1,73 @@
-# ResQnet ESP-4 gateway ingestion
+# ResQnet offline USB gateway integration
 
-## Flow
+## Architecture
 
-The end-node captive portal submits the existing 12-field CSV format to `/report`. The ESP-NOW mesh carries that CSV to ESP-4. When configured, ESP-4 sends it over HTTPS to `POST /api/v1/gateway/reports` and keeps the record in its SPIFFS queue until the API returns a 2xx response. Only then does the gateway persist the completion marker and broadcast the end-to-end mesh ACK. HTTPS retries use a stable `(gateway_node_id, source_node_id, sequence)` idempotency key, so retrying a report should not create a second incident.
+ESP-1 (end node), ESP-2 (primary relay), ESP-3 (backup relay) and ESP-4 (gateway) communicate over the existing ESP-NOW mesh. ESP-4 does not join a router or contact an internet service. It writes received reports to its durable local queue, then emits a structured line on its USB serial console:
 
-The endpoint requires `Authorization: Bearer <RESQNET_GATEWAY_TOKEN>`. Store the token as a server-only environment variable named `RESQNET_GATEWAY_TOKEN`; do not prefix it with `NEXT_PUBLIC_`, put it in browser code, or commit it to Git.
+`RESQNET_BRIDGE_REPORT:{ "gateway_node_id": "...", "source_node_id": "...", "sequence": 123, "payload": "..." }`
 
-## Request format
+A Python bridge running on the PC reads those lines, submits each record to this dashboard's local API, and writes `bridge ack <source_node_id> <sequence>` back over the same USB serial connection only after the API returns a successful response containing `accepted: true`. ESP-4 then persists completion and sends the end-to-end mesh ACK. If the PC or dashboard is unavailable, the gateway retains the record and retries. The API idempotency key is the tuple `(gateway_node_id, source_node_id, sequence)`.
 
-`POST /api/v1/gateway/reports` accepts JSON:
+## Start the local dashboard
+
+Use this branch of the dashboard repository. Install its dependencies while internet access is available, then the application can run locally without internet access as long as the dependencies and Node.js are already installed.
+
+In PowerShell, from the dashboard repository folder:
+
+```powershell
+npm install
+npx prisma generate
+$env:RESQNET_GATEWAY_TOKEN = 'replace-with-a-long-random-test-token'
+npm run dev
+```
+
+The development launcher points Prisma at the repository's local SQLite database. The API is available at `http://127.0.0.1:3000/api/v1/gateway/reports`. The token must be set in the dashboard terminal before starting the server, and must never be committed or put in frontend code.
+
+## Start the USB bridge
+
+The ESP-IDF firmware integration archive includes `tools/usb_gateway_bridge.py`. Extract the firmware project and open a second PowerShell terminal in its `ResQnet` directory. Install pyserial once, then run:
+
+```powershell
+py -m venv .venv-bridge
+.\.venv-bridge\Scripts\Activate.ps1
+python -m pip install pyserial
+$env:RESQNET_GATEWAY_TOKEN = 'replace-with-the-same-test-token'
+python tools\usb_gateway_bridge.py --port COMx
+```
+
+Replace `COMx` with ESP-4's COM port. Use the same token value that is set in the dashboard terminal. Close ESP-IDF Monitor before starting the Python bridge because the bridge must exclusively open the serial port.
+
+The bridge defaults to `http://127.0.0.1:3000/api/v1/gateway/reports`, accepts only localhost API URLs in offline mode, and uses Python's standard HTTP client. It does not require a cloud tunnel, hosted dashboard, router internet access, or a public URL.
+
+## API request payload
+
+`POST /api/v1/gateway/reports` accepts:
 
 ```json
 {
   "gateway_node_id": "RQ-88F155071AD4",
   "source_node_id": "RQ-78421C6CC474",
   "sequence": 123456789,
-  "payload": "\"Medical Emergency\",\"Demo Name\",\"1\",\"Pregnancy emergency\",\"Critical\",\"\",\"\",\"\",\"false\",\"\",\"\",\"\"
+  "payload": "\"Medical Emergency\",\"Demo Name\",\"1\",\"Pregnancy emergency\",\"Critical\",\"\",\"\",\"\",\"false\",\"\",\"\",\" \""
 }
 ```
 
-`payload` is the original 12-field CSV line: report type, name, people, emergency, injury level, situation, supplies, details, location-available flag, latitude, longitude, and accuracy. Phone location is optional. Supported dashboard mappings are `Instant SOS` → `RESCUE/CRITICAL`, `Medical Emergency` → `MEDICAL` with priority derived from severity, and `Safe & Waiting` → `RESCUE/LOW`. The origin node is recorded as the incident source. Unknown origin nodes are registered with a random secret that this endpoint never returns.
+The payload is the existing 12-field phone-portal CSV line. Supported mappings include `Instant SOS` → `RESCUE/CRITICAL`, `Medical Emergency` → `MEDICAL` with severity-based priority, and `Safe & Waiting` → `RESCUE/LOW`. The origin node is attached to the incident. The modular firmware's compact JSON sensor telemetry is handled separately by updating the source node's GPS/IMU module state rather than creating an incident per sample.
 
-Success is `201` for a new incident or `200` for an already accepted duplicate, with `accepted: true`. Authentication failures return `401`; invalid payloads return `400`; database failures are not acknowledged as successful. The endpoint also creates the normal `IncidentEvent` entry so the dashboard's incident queue and detail view can use the record.
+The API requires `Authorization: Bearer <RESQNET_GATEWAY_TOKEN>`. It returns `accepted: true` when an emergency report or telemetry record has been handled, including an already stored duplicate. Authentication failures and invalid payloads are not accepted; the PC bridge will not ACK them to the gateway.
 
-## Sensor telemetry is accepted separately
+## Testing order
 
-The modular firmware also sends compact JSON telemetry through the same mesh queue, for example `{"kind":"telemetry","gps_seen":0,"fix":0,"lat_e6":null,"lon_e6":null,"imu":1,"moving":0,"ax_mg":12,"ay_mg":-5,"az_mg":1000,"gx_dps10":0,"gy_dps10":3,"gz_dps10":-2}`. The API recognizes that payload and idempotently upserts the source node's `GPS` and `IMU` rows in the existing `Module` table. It does not create an emergency incident for sensor samples or append a database row every five seconds. In this change the dashboard receives module presence/health state; raw accelerometer and gyroscope values are validated but are not shown as a live chart.
+1. Run the parser tests with `npx tsx --test tests/resqnet-gateway.test.ts`.
+2. Start the local dashboard and send one labelled test report using the PowerShell API smoke test in the firmware archive's `docs/Offline_USB_Gateway_Integration.md`.
+3. Confirm one incident is created, then repeat the same request and confirm duplicate suppression.
+4. Build the adapted ESP-IDF project locally with `idf.py build`. Do not flash it if the build fails.
+5. Flash ESP-4 only, close ESP-IDF Monitor, run the bridge, and submit a clearly labelled report from the end-node phone portal.
+6. Confirm that the local dashboard's Incidents queue contains the test report. The gateway log after ACK should contain `REPORT_UPLOADED ... acknowledged_to_mesh=1`.
+7. Stop the dashboard briefly and submit a second test. It should remain in ESP-4's durable queue, then be delivered after the dashboard restarts. The record should appear only once.
 
-## Test endpoint before connecting the ESP32
+## Limitations and safety
 
-The CSV parser and telemetry decoder tests can be run locally with `npx tsx --test tests/resqnet-gateway.test.ts`. In PowerShell, replace the host and token. Use a new sequence number for a new demo incident; reuse the same sequence to confirm duplicate suppression.
+This is a prototype, not a certified emergency system. Use fictitious test data only. Do not run `idf.py erase-flash`; it can erase persistent IDs, roles and queued reports. The gateway has finite storage, so if the PC remains disconnected until its queue is full, new records cannot be guaranteed to fit.
 
-```powershell
-$token = "PASTE_THE_SERVER_ONLY_TOKEN_HERE"
-$body = @{
-  gateway_node_id = "RQ-88F155071AD4"
-  source_node_id  = "RQ-78421C6CC474"
-  sequence        = 123456789
-  payload         = '"Medical Emergency","ResQnet test","1","Pregnancy emergency","Critical","","","API smoke test","false","","",""'
-} | ConvertTo-Json
-
-Invoke-RestMethod `
-  -Uri "https://YOUR-DEPLOYMENT-HOST/api/v1/gateway/reports" `
-  -Method Post `
-  -Headers @{ Authorization = "Bearer $token" } `
-  -ContentType "application/json" `
-  -Body $body
-```
-
-After a successful response, sign in to the dashboard and open the Incidents queue. The test incident should appear as a new `MEDICAL/CRITICAL` report. Send the same request again to verify that it returns `duplicate: true` instead of creating another row.
-
-## Configure the ESP-4 gateway over its USB serial console
-
-1. In the deployment's server-side environment variables, set `RESQNET_GATEWAY_TOKEN` to a strong random value. Generate one in PowerShell with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. Redeploy/restart after adding the variable.
-2. The Wi-Fi router must provide 2.4 GHz on channel 6. ESP-NOW and the gateway SoftAP share the same ESP32 radio; a different router channel will interfere with the mesh.
-3. Open ESP-IDF Monitor for ESP-4. Enter these commands, replacing values with your real router SSID/password, deployed URL, and the same server token:
-
-```text
-cloud ssid YourRouterSSID
-cloud password YourRouterPassword
-cloud endpoint https://YOUR-DEPLOYMENT-HOST/api/v1/gateway/reports
-cloud token PASTE_THE_SAME_TOKEN_HERE
-cloud status
-cloud restart
-```
-
-The token and Wi-Fi password are stored in NVS and never printed by the firmware. `cloud status` reports whether the four values are present, not their contents. Do not use `erase-flash`; it would erase node identity, roles, and stored settings/reports. To disable the uplink, run `cloud clear`.
-
-4. After reboot, look for `RESQNET_CLOUD: Internet uplink connected` and `Dashboard uplink enabled` in ESP-4's monitor. If the router connection fails, check the SSID/password and channel 6 requirement. If a report is waiting in the queue, a successful post prints `Dashboard accepted report`, followed by `RESQNET_GATEWAY: REPORT_UPLOADED ... acknowledged_to_mesh=1`. Only then should the end-node portal show `Your request has been submitted.`
-5. Submit a test report from the end-node phone portal. Confirm it appears in the browser dashboard's Incidents queue. Re-submit only for a separate test or use a different sequence in the API smoke test above.
-
-## Deployment database requirement
-
-The repository currently declares `provider = "sqlite"` and the development script points to `db/custom.db`. That works for the local/demo environment but a local SQLite file is not reliable persistent storage for Vercel Functions. Before treating a Vercel deployment as a real receiver, configure a persistent hosted database and update the Prisma deployment setup for it. Do not interpret a database error as a successful upload: the firmware intentionally keeps its flash queue and does not ACK the mesh until the endpoint returns 2xx.
+A local test does not validate a future hosted deployment or production database. The repository's Prisma schema currently uses SQLite; this is suitable for the local demo, but a future multi-instance Vercel deployment needs persistent hosted storage and an appropriate Prisma deployment configuration.
