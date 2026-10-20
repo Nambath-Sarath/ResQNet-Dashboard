@@ -29,7 +29,7 @@ The modular firmware also sends compact JSON telemetry through the same mesh que
 
 ## Test endpoint before connecting the ESP32
 
-In PowerShell, replace the host and token. Use a new sequence number for a new demo incident; reuse the same sequence to confirm duplicate suppression.
+The CSV parser and telemetry decoder tests can be run locally with `npx tsx --test tests/resqnet-gateway.test.ts`. In PowerShell, replace the host and token. Use a new sequence number for a new demo incident; reuse the same sequence to confirm duplicate suppression.
 
 ```powershell
 $token = "PASTE_THE_SERVER_ONLY_TOKEN_HERE"
