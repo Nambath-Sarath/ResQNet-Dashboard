@@ -27,6 +27,23 @@ function validGatewayToken(req: Request): boolean {
   return expectedBytes.length === providedBytes.length && timingSafeEqual(expectedBytes, providedBytes)
 }
 
+async function ensureSourceNode(sourceNodeId: string): Promise<void> {
+  // Unknown origin nodes are registered with an unprovisioned secret that is never returned.
+  await db.node.upsert({
+    where: { id: sourceNodeId },
+    create: {
+      id: sourceNodeId,
+      display_name: `ResQnet node ${sourceNodeId}`,
+      hardware_revision: 'ESP32',
+      firmware_version: 'ResQnet ESP-IDF',
+      protocol_version: '1.0',
+      auth_secret: randomUUID(),
+      lifecycle_state: 'REGISTERED',
+    },
+    update: {},
+  })
+}
+
 function buildDescription(
   report: NonNullable<ReturnType<typeof normalizePortalReport>>,
   gatewayNodeId: string,
@@ -60,7 +77,7 @@ export async function POST(req: Request) {
     }
 
     const contentLength = Number(req.headers.get('content-length') ?? 0)
-    if (Number.isFinite(contentLength) && contentLength > MAX_REQUEST_BYTET) {
+    if (Number.isFinite(contentLength) && contentLength > MAX_REQUEST_BYTES) {
       return Response.json(
         { error: { code: 'PAYLOAD_TOO_LARGE', message: 'Gateway report is too large.' } },
         { status: 413 },
@@ -235,7 +252,7 @@ export async function POST(req: Request) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         const duplicate = await db.incident.findFirst({
           where: { source_node_id: sourceNodeId, client_submission_id: clientSubmissionId },
-          select: { id: https, status: true, created_at: true },
+          select: { id: true, status: true, created_at: true },
         })
         if (duplicate) {
           return Response.json({
