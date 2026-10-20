@@ -48,7 +48,7 @@ The bridge defaults to `http://127.0.0.1:3000/api/v1/gateway/reports`, accepts o
   "gateway_node_id": "RQ-88F155071AD4",
   "source_node_id": "RQ-78421C6CC474",
   "sequence": 123456789,
-  "payload": "\"Medical Emergency\",\"Demo Name\",\"1\",\"Pregnancy emergency\",\"Critical\",\"\",\"\",\"\",\"false\",\"\",\"\",\" \""
+  "payload": "\"Medical Emergency\",\"Demo Name\",\"1\",\"Pregnancy emergency\",\"Critical\",\"\",\"\",\"Local test\",\"false\",\"\",\"\",\"\""
 }
 ```
 
