@@ -23,6 +23,10 @@ The endpoint requires `Authorization: Bearer <RESQNET_GATEWAY_TOKEN>`. Store the
 
 Success is `201` for a new incident or `200` for an already accepted duplicate, with `accepted: true`. Authentication failures return `401`; invalid payloads return `400`; database failures are not acknowledged as successful. The endpoint also creates the normal `IncidentEvent` entry so the dashboard's incident queue and detail view can use the record.
 
+## Sensor telemetry is accepted separately
+
+The modular firmware also sends compact JSON telemetry through the same mesh queue, for example `{"kind":"telemetry","gps_seen":0,"fix":0,"lat_e6":null,"lon_e6":null,"imu":1,"moving":0,"ax_mg":12,"ay_mg":-5,"az_mg":1000,"gx_dps10":0,"gy_dps10":3,"gz_dps10":-2}`. The API recognizes that payload and idempotently upserts the source node's `GPS` and `IMU` rows in the existing `Module` table. It does not create an emergency incident for sensor samples or append a database row every five seconds. In this change the dashboard receives module presence/health state; raw accelerometer and gyroscope values are validated but are not shown as a live chart.
+
 ## Test endpoint before connecting the ESP32
 
 In PowerShell, replace the host and token. Use a new sequence number for a new demo incident; reuse the same sequence to confirm duplicate suppression.
