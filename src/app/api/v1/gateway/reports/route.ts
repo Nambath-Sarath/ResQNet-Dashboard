@@ -229,7 +229,7 @@ export async function POST(req: Request) {
     const fields = parseCsvRecord(payload)
     const report = fields ? normalizePortalReport(fields) : null
     if (!report) {
-      throw new ValidationError('payload must be a valid 12-field ResQnet portal CSV record.')
+      throw new ValidationError('payload must be a valid 12-field legacy or 13-field timestamped ResQnet portal CSV record.')
     }
 
     const peopleAffected = peopleAffectedFromPortal(report.peopleText)
@@ -276,9 +276,11 @@ export async function POST(req: Request) {
           source_node_id: sourceNodeId,
           location_lat: report.locationAvailable ? report.latitude : null,
           location_lon: report.locationAvailable ? report.longitude : null,
-          location_source: report.locationAvailable ? 'BROWSER_GNSS' : null,
+          location_source: report.locationAvailable ? 'PHONE_GPS_COMPANION' : null,
           location_accuracy_m: report.locationAvailable ? report.accuracyM : null,
-          location_captured_at: report.locationAvailable ? new Date() : null,
+          location_captured_at: report.locationAvailable
+            ? new Date(report.locationCapturedAtMs ?? Date.now())
+            : null,
           events: {
             create: {
               event_type: 'created',
