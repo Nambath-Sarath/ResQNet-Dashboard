@@ -53,12 +53,15 @@ Required action:
 Files: `src/lib/resqnet-gateway.ts`, `src/app/api/v1/gateway/reports/route.ts`
 
 - The telemetry parser validates fields such as `ax_mg`, `ay_mg`, `az_mg`, `gx_dps10`, `gy_dps10`, `gz_dps10` and `moving`.
-- The current API stores only module presence/status and generic capability strings; it does not retain those latest readings in a queryable telemetry record.
-- A helper for encoding IMU readings into module capability tokens exists on this branch but is not yet integrated into the API/UI. Treat it as unfinished until tests/build verify it.
+- The follow-up implementation on this branch adds nullable `Module.last_sample_json` and `Module.last_sample_at` fields, writes the latest validated sample for the IMU, and clears the sample when telemetry reports the IMU absent.
+- The IMU UI now shows the firmware motion flag, accelerometer values in mg, gyroscope values converted from 0.1°/s to °/s, and the sample timestamp. It no longer displays the hard-coded “stable” or “0.4°” value.
+- The new camera and environment UI states explicitly say those live integrations are unavailable and no photo request or fake environmental measurement is shown.
 
-Required action:
-- Choose and document a real storage shape for the latest sample (at minimum, preserve the latest sample plus sample timestamp). Map fixed-point units correctly (mg and 0.1 degrees/s) and render values from the server response.
-- Test that changing sensor input changes the displayed values and removing the sensor changes status without displaying the old sample as current.
+Remaining verification:
+- Apply the additive Prisma schema change to the local database and regenerate Prisma Client.
+- Run the parser/sample tests and a complete Next.js build.
+- Re-test with a moving/stationary sensor and removal/reconnection. Verify that the UI changes from actual frames, and that no old sample remains displayed after the IMU is reported absent.
+- This stores only the latest sample, not a historical time series. A real trend chart would need a separate time-series model and retention policy.
 
 ## P1 — Simulator functions that must not be presented as live hardware
 
