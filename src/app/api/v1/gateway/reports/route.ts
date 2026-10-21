@@ -133,6 +133,21 @@ export async function POST(req: Request) {
         ? 'NOT_DETECTED' as const
         : telemetry.gpsFix ? 'PRESENT_ONLINE' as const : 'PRESENT_DEGRADED' as const
       const imuStatus = telemetry.imuPresent ? 'PRESENT_ONLINE' as const : 'NOT_DETECTED' as const
+      const imuSample = telemetry.imuPresent
+        ? JSON.stringify({
+            moving: telemetry.moving,
+            acceleration_mg: {
+              x: telemetry.axMg,
+              y: telemetry.ayMg,
+              z: telemetry.azMg,
+            },
+            gyro_dps10: {
+              x: telemetry.gxDps10,
+              y: telemetry.gyDps10,
+              z: telemetry.gzDps10,
+            },
+          })
+        : null
 
       await db.module.upsert({
         where: { node_id_module_id: { node_id: sourceNodeId, module_id: 'gps' } },
@@ -162,12 +177,16 @@ export async function POST(req: Request) {
           capabilities: telemetry.imuPresent ? 'accelerometer,gyroscope,motion' : 'not_detected',
           firmware_version: 'resqnet-telemetry-v1',
           last_seen_at: telemetry.imuPresent ? now : null,
+          last_sample_json: imuSample,
+          last_sample_at: telemetry.imuPresent ? now : null,
         },
         update: {
           status: imuStatus,
           capabilities: telemetry.imuPresent ? 'accelerometer,gyroscope,motion' : 'not_detected',
           firmware_version: 'resqnet-telemetry-v1',
           last_seen_at: telemetry.imuPresent ? now : null,
+          last_sample_json: imuSample,
+          last_sample_at: telemetry.imuPresent ? now : null,
         },
       })
 
