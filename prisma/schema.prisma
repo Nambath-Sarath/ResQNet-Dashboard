@@ -91,6 +91,8 @@ model Node {
   deployment_locked_by String?
   deployment_locked_at DateTime?
   deployment_accuracy_m Float?
+  // Most recent contact inferred from a report received by the USB gateway; separate from heartbeat.
+  last_gateway_contact_at DateTime?
   created_at          DateTime      @default(now())
   updated_at          DateTime      @updatedAt
 
