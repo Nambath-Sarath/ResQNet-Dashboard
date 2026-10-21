@@ -112,6 +112,8 @@ export type NodeModule = {
   capabilities: string
   firmware_version: string | null
   last_seen_at: string | null
+  last_sample_json: string | null
+  last_sample_at: string | null
 }
 
 export type NodeDetail = {
