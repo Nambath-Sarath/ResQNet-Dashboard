@@ -286,7 +286,7 @@ function ImuControls({ module }: { module: NodeModule }) {
             </div>
           </div>
           <p className="text-[10px] text-muted-foreground">
-            Latest sample: {formatDateTime(module.last_sample_received_at)}. Gyroscope firmware values are reported in 0.1°/s units and converted for display.
+            Received by dashboard: {formatDateTime(module.last_sample_received_at)}. Gyroscope firmware values are reported in 0.1°/s units and converted for display. The current telemetry payload has no source-capture timestamp.
           </p>
         </>
       ) : (
