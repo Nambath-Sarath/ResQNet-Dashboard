@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { parseImuSample } from '../src/lib/imu-telemetry'
 import {
   classifyPortalReport,
   normalizePortalReport,
@@ -64,4 +65,28 @@ test('accepts the compact MPU6500 telemetry JSON and converts fixed-point values
 test('rejects invalid sensor telemetry instead of accepting malformed payloads', () => {
   assert.equal(parseResQnetTelemetry('{"kind":"telemetry","gps_seen":1,"fix":1,"lat_e6":null,"lon_e6":null,"imu":0,"moving":null}'), null)
   assert.equal(parseResQnetTelemetry('{"kind":"unknown"}'), null)
+})
+
+
+test('parses a stored latest IMU sample without inventing unavailable values', () => {
+  const sample = parseImuSample(JSON.stringify({
+    moving: true,
+    acceleration_mg: { x: -631, y: -78, z: -773 },
+    gyro_dps10: { x: -23, y: 50, z: 12 },
+  }))
+  assert.ok(sample)
+  if (!sample) throw new Error('expected stored IMU sample')
+  assert.equal(sample.moving, true)
+  assert.equal(sample.acceleration_mg.x, -631)
+  assert.equal(sample.gyro_dps10.y, 50)
+})
+
+test('returns no IMU sample for absent, malformed, or invalid measurement data', () => {
+  assert.equal(parseImuSample(null), null)
+  assert.equal(parseImuSample('not json'), null)
+  assert.equal(parseImuSample(JSON.stringify({
+    moving: 0,
+    acceleration_mg: { x: 1, y: 2, z: 3 },
+    gyro_dps10: { x: 0, y: 0, z: 0 },
+  })), null)
 })
