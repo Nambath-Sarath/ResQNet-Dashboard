@@ -1,4 +1,4 @@
-/** Helpers for decoding the 12-field CSV emitted by the ResQnet ESP32 captive portal. */
+/** Helpers for decoding legacy 12-field and timestamped 13-field ResQnet portal CSV records. */
 export type ResQnetPortalReport = {
   type: string
   name: string
@@ -12,6 +12,7 @@ export type ResQnetPortalReport = {
   latitude: number | null
   longitude: number | null
   accuracyM: number | null
+  locationCapturedAtMs: number | null
 }
 
 /** Parse a single CSV record, including quoted commas and escaped double quotes. */
@@ -67,9 +68,9 @@ function optionalCoordinate(value: string, minimum: number, maximum: number): nu
   return parsed
 }
 
-/** Validates and maps the exact portal CSV contract (12 fields). */
+/** Validates legacy 12-field and timestamped 13-field portal CSV records. */
 export function normalizePortalReport(fields: string[]): ResQnetPortalReport | null {
-  if (fields.length !== 12) return null
+  if (fields.length !== 12 && fields.length !== 13) return null
 
   const hasLatitude = fields[9].trim() !== ''
   const hasLongitude = fields[10].trim() !== ''
@@ -82,6 +83,13 @@ export function normalizePortalReport(fields: string[]): ResQnetPortalReport | n
 
   const locationAvailable = fields[8].trim().toLowerCase() === 'true'
   const hasCoordinates = latitude !== null && longitude !== null
+  let locationCapturedAtMs: number | null = null
+  if (fields.length === 13 && fields[12].trim() !== '') {
+    const capturedAt = Number(fields[12])
+    if (!Number.isSafeInteger(capturedAt) || capturedAt < 1 || capturedAt > Number.MAX_SAFE_INTEGER) return null
+    locationCapturedAtMs = capturedAt
+  }
+  if (locationCapturedAtMs !== null && (!locationAvailable || !hasCoordinates)) return null
 
   return {
     type: fields[0].trim().slice(0, 80),
@@ -96,6 +104,7 @@ export function normalizePortalReport(fields: string[]): ResQnetPortalReport | n
     latitude: hasCoordinates ? latitude : null,
     longitude: hasCoordinates ? longitude : null,
     accuracyM: hasCoordinates ? accuracyM : null,
+    locationCapturedAtMs: locationAvailable && hasCoordinates ? locationCapturedAtMs : null,
   }
 }
 
