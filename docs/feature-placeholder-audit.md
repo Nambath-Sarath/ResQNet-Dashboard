@@ -37,17 +37,20 @@ Required action:
 - Read motion/tilt/acceleration/gyro values from stored telemetry. If a value is unavailable, display “not available”, never a default plausible measurement.
 - Only show environment readings when a supported environment sensor is actually connected and reports them.
 
-### Telemetry currently does not make ESP-3 online
-Files: `src/app/api/v1/gateway/reports/route.ts`, `src/app/api/v1/nodes/route.ts`, `src/app/api/v1/nodes/[nodeId]/route.ts`
+### Node status now uses recent gateway-observed contact (implementation added; build/device acceptance still pending)
+Files: `prisma/schema.prisma`, `src/lib/node-runtime.ts`, `src/app/api/v1/gateway/reports/route.ts`, `src/app/api/v1/nodes/route.ts`, `src/app/api/v1/nodes/[nodeId]/route.ts`, `src/app/api/v1/overview/route.ts`
 
-- Gateway telemetry writes/upserts GPS and IMU module rows, but it does not create a node heartbeat or otherwise update the online-state source.
-- The node list/detail pages determine online/offline from heartbeat history. Consequently ESP-3 can be shown as “Offline / Last seen never” even while fresh IMU telemetry is arriving via USB (observed during the local test).
-- Module statuses are written from telemetry but are not aged to stale/not-detected when telemetry stops.
+- The node record now has a nullable `last_gateway_contact_at`, kept separate from `NodeHeartbeat`.
+- When the authenticated USB gateway submits sensor telemetry or a portal report, the API records the gateway-observed contact timestamp for the source node, the reported last hop when supplied, and the gateway.
+- Node inventory, node detail and overview derive runtime state from the newest heartbeat or gateway-observed contact, with a five-minute freshness window. Detail/list displays say “Last contact” and identify whether it came from a device heartbeat or a gateway report.
+- Battery, RSSI, uptime and hardware health still come only from actual heartbeat data; the gateway-contact path does not synthesize these values.
 
-Required action:
-- Define “node last contact” based on actual received telemetry/heartbeat and distinguish “device heartbeat” from “module telemetry”. Do not invent battery, RSSI or uptime where telemetry does not include them.
-- Derive online/stale state using timestamps and an explicit freshness threshold.
-- Add tests for telemetry arriving, telemetry going stale, module removal and module re-detection.
+Limitations to retain:
+- The firmware payload has no source-capture timestamp, so a delayed report drained from the ESP32 queue can refresh gateway-observed contact without proving current radio reachability. “Online” means recent contact evidence was observed by the dashboard, not that the node has been independently polled in real time.
+- A node that has not originated a report or been identified as a last hop cannot be declared online merely because another node is sending data. Firmware-level periodic heartbeat/mesh-neighbor status would be needed for authoritative status for every board.
+- Module statuses are not yet aged to stale/not-detected when telemetry stops.
+
+Regression tests for runtime derivation have been added to `tests/resqnet-gateway.test.ts`; tests and a full Next.js/Prisma build must still be run locally before acceptance.
 
 ### Raw IMU readings are discarded
 Files: `src/lib/resqnet-gateway.ts`, `src/app/api/v1/gateway/reports/route.ts`
@@ -134,7 +137,7 @@ These paths have real database writes/reads in the current code and should be ke
 ## Proposed implementation order
 
 1. **Preserve data and remove demo-data ambiguity:** make a clean local showcase DB path and provide secure initial-operator setup; don't destructively reset the current database.
-2. **Fix telemetry trust:** store latest IMU measurements with timestamps, render actual values, update node last-contact from incoming telemetry, and derive stale status.
+2. **Fix telemetry trust:** latest IMU sample storage/rendering and gateway-observed node contact are implemented on the feature branch; validate with a local build and hardware test. Module staleness and authoritative per-board heartbeat reporting remain outstanding.
 3. **Disable fake hardware actions:** remove/disable mocked camera/environment features until their hardware/API paths exist; clearly separate admin simulator controls.
 4. **Fix delivery claims:** replace false gateway-acceptance/queue labels where no physical ACK exists.
 5. **Fix offline maps:** either add real local tiles or accurately show that no basemap is available offline.
