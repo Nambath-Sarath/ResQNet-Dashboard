@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { parseImuSample } from '../src/lib/imu-telemetry'
+import { deriveNodeRuntimeState } from '../src/lib/node-runtime'
 import {
   classifyPortalReport,
   normalizePortalReport,
@@ -89,4 +90,65 @@ test('returns no IMU sample for absent, malformed, or invalid measurement data',
     acceleration_mg: { x: 1, y: 2, z: 3 },
     gyro_dps10: { x: 0, y: 0, z: 0 },
   })), null)
+})
+
+test('treats recent gateway-observed reports as recent node contact without inventing heartbeat data', () => {
+  const now = new Date('2026-10-21T12:00:00.000Z')
+  const runtime = deriveNodeRuntimeState({
+    now,
+    gatewayContactAt: new Date('2026-10-21T11:59:30.000Z'),
+    lifecycleState: 'DEPLOYED',
+  })
+  assert.equal(runtime.runtime_state, 'online')
+  assert.equal(runtime.online, true)
+  assert.equal(runtime.last_contact_source, 'gateway_report')
+  assert.equal(runtime.last_contact_at?.toISOString(), '2026-10-21T11:59:30.000Z')
+})
+
+test('marks gateway contact offline after the five-minute freshness window', () => {
+  const now = new Date('2026-10-21T12:00:00.000Z')
+  const runtime = deriveNodeRuntimeState({
+    now,
+    gatewayContactAt: new Date('2026-10-21T11:54:59.000Z'),
+    lifecycleState: 'DEPLOYED',
+  })
+  assert.equal(runtime.runtime_state, 'offline')
+  assert.equal(runtime.online, false)
+})
+
+test('preserves fault status when the most recent contact is a fresh heartbeat', () => {
+  const now = new Date('2026-10-21T12:00:00.000Z')
+  const runtime = deriveNodeRuntimeState({
+    now,
+    heartbeatReceivedAt: new Date('2026-10-21T11:59:00.000Z'),
+    gatewayContactAt: new Date('2026-10-21T11:58:00.000Z'),
+    heartbeatHealthState: 'FAULT',
+    lifecycleState: 'DEPLOYED',
+  })
+  assert.equal(runtime.runtime_state, 'fault')
+  assert.equal(runtime.last_contact_source, 'heartbeat')
+})
+
+test('does not carry an old heartbeat fault over a newer gateway report', () => {
+  const now = new Date('2026-10-21T12:00:00.000Z')
+  const runtime = deriveNodeRuntimeState({
+    now,
+    heartbeatReceivedAt: new Date('2026-10-21T11:58:00.000Z'),
+    gatewayContactAt: new Date('2026-10-21T11:59:00.000Z'),
+    heartbeatHealthState: 'FAULT',
+    lifecycleState: 'DEPLOYED',
+  })
+  assert.equal(runtime.runtime_state, 'online')
+  assert.equal(runtime.last_contact_source, 'gateway_report')
+})
+
+test('keeps retired nodes offline even when contact is recent', () => {
+  const now = new Date('2026-10-21T12:00:00.000Z')
+  const runtime = deriveNodeRuntimeState({
+    now,
+    gatewayContactAt: new Date('2026-10-21T11:59:30.000Z'),
+    lifecycleState: 'RETIRED',
+  })
+  assert.equal(runtime.runtime_state, 'offline')
+  assert.equal(runtime.online, false)
 })
