@@ -1,9 +1,6 @@
 'use client'
 
-import { useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import { StatusBadge } from '@/components/shared/status-badge'
 import {
   Cpu,
@@ -16,8 +13,6 @@ import {
   AlertTriangle,
   Radio,
   Zap,
-  Send,
-  ShieldCheck,
 } from 'lucide-react'
 import {
   MODULE_STATUS_LABELS,
