@@ -173,7 +173,7 @@ model Module {
   last_seen_at     DateTime?
   // Latest validated sensor sample, stored separately from capability tokens.
   last_sample_json String?
-  last_sample_at   DateTime?
+  last_sample_received_at   DateTime?
 
   node Node @relation(fields: [node_id], references: [id], onDelete: Cascade)
 
