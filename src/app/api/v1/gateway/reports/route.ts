@@ -178,7 +178,7 @@ export async function POST(req: Request) {
           firmware_version: 'resqnet-telemetry-v1',
           last_seen_at: telemetry.imuPresent ? now : null,
           last_sample_json: imuSample,
-          last_sample_at: telemetry.imuPresent ? now : null,
+          last_sample_received_at: telemetry.imuPresent ? now : null,
         },
         update: {
           status: imuStatus,
@@ -186,7 +186,7 @@ export async function POST(req: Request) {
           firmware_version: 'resqnet-telemetry-v1',
           last_seen_at: telemetry.imuPresent ? now : null,
           last_sample_json: imuSample,
-          last_sample_at: telemetry.imuPresent ? now : null,
+          last_sample_received_at: telemetry.imuPresent ? now : null,
         },
       })
 
