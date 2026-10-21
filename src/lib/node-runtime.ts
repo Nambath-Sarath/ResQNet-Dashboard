@@ -45,12 +45,13 @@ export function deriveNodeRuntimeState(input: DeriveNodeRuntimeInput): DerivedNo
   const contactIsFresh = contactAgeMs >= 0 && contactAgeMs <= freshnessMs
   const heartbeatAgeMs = heartbeatAt === null ? Number.POSITIVE_INFINITY : now.getTime() - heartbeatAt.getTime()
   const heartbeatIsFresh = heartbeatAgeMs >= 0 && heartbeatAgeMs <= freshnessMs
+  const heartbeatIsLatest = heartbeatAt !== null && (!gatewayAt || heartbeatAt.getTime() >= gatewayAt.getTime())
   const online = contactIsFresh && input.lifecycleState !== 'RETIRED'
 
   let runtime_state: NodeRuntimeState
   if (!online) runtime_state = 'offline'
-  else if (heartbeatIsFresh && input.heartbeatHealthState === 'FAULT') runtime_state = 'fault'
-  else if (heartbeatIsFresh && input.heartbeatHealthState === 'DEGRADED') runtime_state = 'stale'
+  else if (heartbeatIsLatest && heartbeatIsFresh && input.heartbeatHealthState === 'FAULT') runtime_state = 'fault'
+  else if (heartbeatIsLatest && heartbeatIsFresh && input.heartbeatHealthState === 'DEGRADED') runtime_state = 'stale'
   else runtime_state = 'online'
 
   return {
