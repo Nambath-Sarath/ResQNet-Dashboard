@@ -53,7 +53,7 @@ Required action:
 Files: `src/lib/resqnet-gateway.ts`, `src/app/api/v1/gateway/reports/route.ts`
 
 - The telemetry parser validates fields such as `ax_mg`, `ay_mg`, `az_mg`, `gx_dps10`, `gy_dps10`, `gz_dps10` and `moving`.
-- The follow-up implementation on this branch adds nullable `Module.last_sample_json` and `Module.last_sample_at` fields, writes the latest validated sample for the IMU, and clears the sample when telemetry reports the IMU absent.
+- The follow-up implementation on this branch adds nullable `Module.last_sample_json` and `Module.last_sample_received_at` fields, writes the latest validated sample received by the API for the IMU, and clears the sample when telemetry reports the IMU absent. The firmware payload currently has no source-capture timestamp; the UI labels this time as dashboard receive time rather than pretending it is the measurement capture time.
 - The IMU UI now shows the firmware motion flag, accelerometer values in mg, gyroscope values converted from 0.1°/s to °/s, and the sample timestamp. It no longer displays the hard-coded “stable” or “0.4°” value.
 - The new camera and environment UI states explicitly say those live integrations are unavailable and no photo request or fake environmental measurement is shown.
 
