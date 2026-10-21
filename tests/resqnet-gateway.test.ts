@@ -37,6 +37,31 @@ test('maps a phone medical report into validated portal fields', () => {
   assert.equal(report.latitude, null)
 })
 
+test('parses phone GPS coordinates with the native companion capture timestamp', () => {
+  const capturedAtMs = 1792627200000
+  const fields = parseCsvRecord(
+    '"Instant SOS","","1","","","","","","true","12.34567","76.54321","8","' + capturedAtMs + '"',
+  )
+  assert.ok(fields)
+  if (!fields) throw new Error('expected timestamped phone GPS CSV')
+  assert.equal(fields.length, 13)
+  const report = normalizePortalReport(fields)
+  assert.ok(report)
+  if (!report) throw new Error('expected normalized phone GPS report')
+  assert.equal(report.locationAvailable, true)
+  assert.equal(report.latitude, 12.34567)
+  assert.equal(report.longitude, 76.54321)
+  assert.equal(report.accuracyM, 8)
+  assert.equal(report.locationCapturedAtMs, capturedAtMs)
+})
+
+test('rejects an invalid location capture timestamp', () => {
+  const fields = parseCsvRecord('"Instant SOS","","1","","","","","","true","12.34567","76.54321","8","not-a-time"')
+  assert.ok(fields)
+  if (!fields) throw new Error('expected CSV fields')
+  assert.equal(normalizePortalReport(fields), null)
+})
+
 test('maps portal classifications and severity to the dashboard incident taxonomy', () => {
   assert.deepEqual(classifyPortalReport('Instant SOS', ''), { category: 'RESCUE', priority: 'CRITICAL' })
   assert.deepEqual(classifyPortalReport('Medical Emergency', 'Serious'), { category: 'MEDICAL', priority: 'HIGH' })
