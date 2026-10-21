@@ -342,7 +342,7 @@ function Row({ icon, label, children }: { icon: React.ReactNode; label: string; 
 const MODULE_ICONS: Record<string, typeof Cpu> = {
   GPS: Satellite,
   CAMERA: Camera,
-  IMU: Compass,
+  IMU: Activity,
   ENVIRONMENT: Thermometer,
   LORA: Radio,
   BATTERY: Zap,
