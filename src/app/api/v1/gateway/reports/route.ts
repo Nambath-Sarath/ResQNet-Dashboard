@@ -44,6 +44,25 @@ async function ensureSourceNode(sourceNodeId: string): Promise<void> {
   })
 }
 
+async function recordGatewayObservedContact(nodeId: string, observedAt: Date): Promise<void> {
+  // A report has been observed from/via this node by the authenticated USB gateway.
+  // This is contact evidence, not a synthetic heartbeat or proof of current radio reachability.
+  await db.node.upsert({
+    where: { id: nodeId },
+    create: {
+      id: nodeId,
+      display_name: `ResQnet node ${nodeId}`,
+      hardware_revision: 'ESP32',
+      firmware_version: 'ResQnet ESP-IDF',
+      protocol_version: '1.0',
+      auth_secret: randomUUID(),
+      lifecycle_state: 'REGISTERED',
+      last_gateway_contact_at: observedAt,
+    },
+    update: { last_gateway_contact_at: observedAt },
+  })
+}
+
 function buildDescription(
   report: NonNullable<ReturnType<typeof normalizePortalReport>>,
   gatewayNodeId: string,
@@ -119,6 +138,9 @@ export async function POST(req: Request) {
       throw new ValidationError('payload must contain the portal CSV report and be at most 200 bytes.')
     }
 
+    const lastHopNodeId = NODE_ID_PATTERN.test(lastHopCandidate) ? lastHopCandidate : null
+    const lastHopRole = /^[A-Z_]{1,32}$/.test(lastHopRoleCandidate) ? lastHopRoleCandidate : null
+
     // Sensor nodes send compact JSON telemetry through the same durable mesh queue.
     // Upsert the latest module state, rather than appending one database row every 5 seconds.
     if (payload.startsWith('{')) {
@@ -129,6 +151,8 @@ export async function POST(req: Request) {
 
       await ensureSourceNode(sourceNodeId)
       const now = new Date()
+      const observedNodeIds = [...new Set([sourceNodeId, lastHopNodeId, gatewayNodeId].filter((id): id is string => id !== null))]
+      await Promise.all(observedNodeIds.map((id) => recordGatewayObservedContact(id, now)))
       const gpsStatus = !telemetry.gpsSeen
         ? 'NOT_DETECTED' as const
         : telemetry.gpsFix ? 'PRESENT_ONLINE' as const : 'PRESENT_DEGRADED' as const
@@ -214,11 +238,12 @@ export async function POST(req: Request) {
     }
 
     const { category, priority } = classifyPortalReport(report.type, report.injuryLevel)
-    const lastHopNodeId = NODE_ID_PATTERN.test(lastHopCandidate) ? lastHopCandidate : null
-    const lastHopRole = /^[A-Z_]{1,32}$/.test(lastHopRoleCandidate) ? lastHopRoleCandidate : null
     const clientSubmissionId = `${gatewayNodeId}:${sourceNodeId}:${sequence}`
 
     await ensureSourceNode(sourceNodeId)
+    const reportReceivedAt = new Date()
+    const observedNodeIds = [...new Set([sourceNodeId, lastHopNodeId, gatewayNodeId].filter((id): id is string => id !== null))]
+    await Promise.all(observedNodeIds.map((id) => recordGatewayObservedContact(id, reportReceivedAt)))
 
     const existing = await db.incident.findFirst({
       where: { source_node_id: sourceNodeId, client_submission_id: clientSubmissionId },
