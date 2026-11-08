@@ -255,7 +255,7 @@ export function parseResQnetLocationUpdate(input: string): ResQnetLocationUpdate
   if (typeof capturedAtMs !== 'number' || !Number.isSafeInteger(capturedAtMs) ||
       capturedAtMs < 1) return null
   if (typeof ageMs !== 'number' || !Number.isSafeInteger(ageMs) ||
-      ageMs < 0 || ageMs > 60_000) return null
+      ageMs < 0 || ageMs > 120_000) return null
 
   let accuracyM: number | null = null
   if (accuracyCandidate !== null) {
