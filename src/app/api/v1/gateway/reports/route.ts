@@ -276,7 +276,7 @@ export async function POST(req: Request) {
           source_node_id: sourceNodeId,
           location_lat: report.locationAvailable ? report.latitude : null,
           location_lon: report.locationAvailable ? report.longitude : null,
-          location_source: report.locationAvailable ? 'BROWSER_GNSS' : null,
+          location_source: report.locationAvailable ? 'PHONE_BROWSER' : null,
           location_accuracy_m: report.locationAvailable ? report.accuracyM : null,
           location_captured_at: report.locationAvailable
             ? new Date(report.locationCapturedAtMs ?? Date.now())
