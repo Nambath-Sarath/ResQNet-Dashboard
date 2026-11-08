@@ -103,7 +103,8 @@
 
   function capture(form, options) {
     const settings = options || {};
-    const timeoutMs = Number(settings.timeoutMs) || 3500;
+    const timeoutMs = Number(settings.timeoutMs) || 5000;
+    clearLocation(form);
 
     if (!window.isSecureContext) {
       setStatus(
