@@ -27,11 +27,11 @@ try:
     import serial
     from serial import SerialException
 except ImportError:
-    print(
-        "Missing pyserial. Install it with: python3 -m pip install pyserial",
-        file=sys.stderr,
-    )
-    raise SystemExit(2)
+    serial = None  # type: ignore[assignment]
+
+    class SerialException(Exception):
+        """Placeholder used so parser and spool helpers remain importable in tests."""
+
 
 
 LOG = logging.getLogger("resqnet-gateway")
@@ -226,6 +226,13 @@ def main() -> int:
     )
     parser.add_argument("--timeout", type=float, default=5.0)
     args = parser.parse_args()
+
+    if serial is None:
+        print(
+            "Missing pyserial. Install it with: python3 -m pip install -r requirements-gateway.txt",
+            file=sys.stderr,
+        )
+        return 2
 
     if not args.gateway_id or not args.secret:
         parser.error(
