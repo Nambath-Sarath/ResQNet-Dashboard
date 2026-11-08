@@ -71,3 +71,17 @@ The API requires `Authorization: Bearer <RESQNET_GATEWAY_TOKEN>`. It returns `ac
 This is a prototype, not a certified emergency system. Use fictitious test data only. Do not run `idf.py erase-flash`; it can erase persistent IDs, roles and queued reports. The gateway has finite storage, so if the PC remains disconnected until its queue is full, new records cannot be guaranteed to fit.
 
 A local test does not validate a future hosted deployment or production database. The repository's Prisma schema currently uses SQLite; this is suitable for the local demo, but a future multi-instance Vercel deployment needs persistent hosted storage and an appropriate Prisma deployment configuration.
+
+## Supplemental phone/node location updates
+
+The captive portal keeps its existing SOS, Medical Emergency, and Safe & Waiting controls and the original 12/13-field CSV format. Each action uses the same shared submit path:
+
+1. Submit and persist the emergency/safe report immediately. A phone GPS lookup is never awaited before `POST /report`.
+2. If a fresh phone-browser fix is available, include it in the initial report. If the fix arrives after submission, send a compact `kind: "location_update"` record referencing the original report sequence.
+3. If phone location is unavailable or denied, the portal reads `GET /node-location`. A recent NEO-7M fix on the reporting ESP32 is sent as a `NODE_GPS` location update referencing the original report sequence.
+
+Location update records travel through the same 200-byte ESP-NOW durable report queue, gateway USB serial frame, PC bridge, and authenticated dashboard API. The bridge is intentionally payload-agnostic and requires no GPS-specific changes.
+
+The dashboard applies a supplemental location update to the existing incident; it never creates a second incident. `PHONE_BROWSER` coordinates have higher source priority than `NODE_GPS`; a later phone fix therefore replaces a node fallback. A location update that arrives before its original incident returns HTTP 409 with `accepted: false`, so the PC bridge does not send the gateway ACK and the gateway retries it. Existing incident map markers use the incident's stored coordinates, so an updated location appears on the next map refresh.
+
+If no phone fix and no fresh node fix are available, the original report remains accepted with no coordinates. A node GPS fix identifies the reporting ESP32's position, not necessarily the person's exact position; the dashboard must label its source as `NODE_GPS`.
