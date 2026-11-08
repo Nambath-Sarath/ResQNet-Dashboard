@@ -194,6 +194,12 @@ python tools/pi_serial_receiver.py /dev/ttyUSB0
 Change /dev/ttyUSB0 to the gateway's actual port. The default serial speed
 is 115200 baud; override it with --baud if your firmware differs.
 
+Run the bridge regression tests from the repository root with:
+
+~~~bash
+python tools/test_pi_serial_receiver.py
+~~~
+
 The bridge recognizes lines beginning:
 
 **RESQNET_GATEWAY: REPORT_RECEIVED source=RQ-... seq=123456 payload=...**
