@@ -7,6 +7,7 @@ import {
   normalizePortalReport,
   parseCsvRecord,
   peopleAffectedFromPortal,
+  parseResQnetLocationUpdate,
   parseResQnetTelemetry,
 } from '../src/lib/resqnet-gateway'
 
@@ -176,4 +177,59 @@ test('keeps retired nodes offline even when contact is recent', () => {
   })
   assert.equal(runtime.runtime_state, 'offline')
   assert.equal(runtime.online, false)
+})
+
+
+test('parses late phone GPS updates against the original report sequence', () => {
+  const update = parseResQnetLocationUpdate(JSON.stringify({
+    kind: 'location_update',
+    target_sequence: 1098172730,
+    source: 'PHONE_BROWSER',
+    lat_e6: 12567890,
+    lon_e6: 76234567,
+    accuracy_m: 9,
+    captured_at_ms: 1794151833000,
+    age_ms: 0,
+  }))
+  assert.ok(update)
+  if (!update) throw new Error('expected phone location update')
+  assert.equal(update.targetSequence, 1098172730)
+  assert.equal(update.source, 'PHONE_BROWSER')
+  assert.equal(update.latitude, 12.56789)
+  assert.equal(update.longitude, 76.234567)
+  assert.equal(update.accuracyM, 9)
+})
+
+test('parses node GPS fallback updates without inventing accuracy', () => {
+  const update = parseResQnetLocationUpdate(JSON.stringify({
+    kind: 'location_update',
+    target_sequence: 123,
+    source: 'NODE_GPS',
+    lat_e6: -12567890,
+    lon_e6: 76234567,
+    accuracy_m: null,
+    captured_at_ms: 1794151831000,
+    age_ms: 850,
+  }))
+  assert.ok(update)
+  if (!update) throw new Error('expected node GPS update')
+  assert.equal(update.source, 'NODE_GPS')
+  assert.equal(update.accuracyM, null)
+  assert.equal(update.latitude, -12.56789)
+})
+
+test('rejects location updates with an invalid target, source, or coordinate', () => {
+  const base = {
+    kind: 'location_update',
+    target_sequence: 123,
+    source: 'PHONE_BROWSER',
+    lat_e6: 12567890,
+    lon_e6: 76234567,
+    accuracy_m: 9,
+    captured_at_ms: 1794151833000,
+    age_ms: 0,
+  }
+  assert.equal(parseResQnetLocationUpdate(JSON.stringify({ ...base, target_sequence: 0 })), null)
+  assert.equal(parseResQnetLocationUpdate(JSON.stringify({ ...base, source: 'UNKNOWN' })), null)
+  assert.equal(parseResQnetLocationUpdate(JSON.stringify({ ...base, lat_e6: 91000000 })), null)
 })

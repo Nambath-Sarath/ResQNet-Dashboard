@@ -7,6 +7,7 @@ import {
   classifyPortalReport,
   normalizePortalReport,
   parseCsvRecord,
+  parseResQnetLocationUpdate,
   parseResQnetTelemetry,
   peopleAffectedFromPortal,
 } from '@/lib/resqnet-gateway'
@@ -140,6 +141,104 @@ export async function POST(req: Request) {
 
     const lastHopNodeId = NODE_ID_PATTERN.test(lastHopCandidate) ? lastHopCandidate : null
     const lastHopRole = /^[A-Z_]{1,32}$/.test(lastHopRoleCandidate) ? lastHopRoleCandidate : null
+
+    // Supplemental location packets amend the original incident. They are
+    // separate mesh records so the emergency report never waits for phone GPS.
+    if (payload.startsWith('{')) {
+      const locationUpdate = parseResQnetLocationUpdate(payload)
+      if (locationUpdate) {
+        await ensureSourceNode(sourceNodeId)
+        const receivedAt = new Date()
+        const observedNodeIds = [...new Set([sourceNodeId, lastHopNodeId, gatewayNodeId].filter((id): id is string => id !== null))]
+        await Promise.all(observedNodeIds.map((id) => recordGatewayObservedContact(id, receivedAt)))
+
+        const originalSubmissionId = `${gatewayNodeId}:${sourceNodeId}:${locationUpdate.targetSequence}`
+        const incident = await db.incident.findFirst({
+          where: { source_node_id: sourceNodeId, client_submission_id: originalSubmissionId },
+          select: {
+            id: true,
+            location_lat: true,
+            location_lon: true,
+            location_source: true,
+            location_captured_at: true,
+          },
+        })
+
+        // Do not ACK this supplemental record until its original incident exists.
+        // The PC bridge will leave it queued at ESP-4 and the gateway will retry.
+        if (!incident) {
+          return Response.json({
+            accepted: false,
+            retryable: true,
+            error: 'Original incident has not reached the dashboard yet.',
+            target_sequence: locationUpdate.targetSequence,
+          }, { status: 409 })
+        }
+
+        const incomingCapturedAt = new Date(locationUpdate.capturedAtMs)
+        const currentSource = incident.location_source
+        const sourceRank = (source: string | null): number =>
+          source === 'PHONE_BROWSER' ? 2 : source === 'NODE_GPS' ? 1 : 0
+        const currentHasCoordinates = incident.location_lat !== null && incident.location_lon !== null
+        const incomingRank = sourceRank(locationUpdate.source)
+        const currentRank = sourceRank(currentSource)
+        const newerSameSource = !incident.location_captured_at ||
+          incomingCapturedAt.getTime() > incident.location_captured_at.getTime()
+        const shouldUpdate = !currentHasCoordinates ||
+          incomingRank > currentRank ||
+          (incomingRank === currentRank && newerSameSource)
+
+        if (!shouldUpdate) {
+          return Response.json({
+            accepted: true,
+            duplicate: true,
+            location_update: true,
+            updated: false,
+            incident_id: incident.id,
+          })
+        }
+
+        await db.incident.update({
+          where: { id: incident.id },
+          data: {
+            location_lat: locationUpdate.latitude,
+            location_lon: locationUpdate.longitude,
+            location_source: locationUpdate.source,
+            location_accuracy_m: locationUpdate.accuracyM,
+            location_captured_at: incomingCapturedAt,
+            events: {
+              create: {
+                event_type: 'location_updated',
+                actor_type: 'gateway',
+                actor_id: gatewayNodeId,
+                new_value: locationUpdate.source,
+                note: `Location updated from ${locationUpdate.source}; target report sequence ${locationUpdate.targetSequence}; fix age ${locationUpdate.ageMs} ms.`,
+              },
+            },
+          },
+        })
+
+        await publishEvent({
+          event_type: 'incident.location_updated',
+          entity_id: incident.id,
+          data: {
+            location_source: locationUpdate.source,
+            location_lat: locationUpdate.latitude,
+            location_lon: locationUpdate.longitude,
+            source_node_id: sourceNodeId,
+          },
+        })
+
+        return Response.json({
+          accepted: true,
+          duplicate: false,
+          location_update: true,
+          updated: true,
+          incident_id: incident.id,
+          location_source: locationUpdate.source,
+        })
+      }
+    }
 
     // Sensor nodes send compact JSON telemetry through the same durable mesh queue.
     // Upsert the latest module state, rather than appending one database row every 5 seconds.

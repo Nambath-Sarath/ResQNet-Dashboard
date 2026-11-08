@@ -213,3 +213,66 @@ export function parseResQnetTelemetry(input: string): ResQnetTelemetry | null {
     gzDps10: gzDps10 ?? null,
   }
 }
+
+
+export type ResQnetLocationUpdate = {
+  targetSequence: number
+  source: 'PHONE_BROWSER' | 'NODE_GPS'
+  latitude: number
+  longitude: number
+  accuracyM: number | null
+  capturedAtMs: number
+  ageMs: number
+}
+
+/** Decode a supplemental location record that amends an existing incident. */
+export function parseResQnetLocationUpdate(input: string): ResQnetLocationUpdate | null {
+  let value: unknown
+  try {
+    value = JSON.parse(input)
+  } catch {
+    return null
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const obj = value as Record<string, unknown>
+  if (obj.kind !== 'location_update') return null
+
+  const targetSequence = obj.target_sequence
+  const source = obj.source
+  const latE6 = obj.lat_e6
+  const lonE6 = obj.lon_e6
+  const capturedAtMs = obj.captured_at_ms
+  const ageMs = obj.age_ms ?? 0
+  const accuracyCandidate = obj.accuracy_m
+
+  if (typeof targetSequence !== 'number' || !Number.isSafeInteger(targetSequence) ||
+      targetSequence < 1 || targetSequence > 0xffff_ffff) return null
+  if (source !== 'PHONE_BROWSER' && source !== 'NODE_GPS') return null
+  if (typeof latE6 !== 'number' || !Number.isSafeInteger(latE6) ||
+      latE6 < -90_000_000 || latE6 > 90_000_000) return null
+  if (typeof lonE6 !== 'number' || !Number.isSafeInteger(lonE6) ||
+      lonE6 < -180_000_000 || lonE6 > 180_000_000) return null
+  if (typeof capturedAtMs !== 'number' || !Number.isSafeInteger(capturedAtMs) ||
+      capturedAtMs < 1) return null
+  if (typeof ageMs !== 'number' || !Number.isSafeInteger(ageMs) ||
+      ageMs < 0 || ageMs > 120_000) return null
+
+  let accuracyM: number | null = null
+  if (accuracyCandidate !== null) {
+    if (typeof accuracyCandidate !== 'number' || !Number.isFinite(accuracyCandidate) ||
+        accuracyCandidate < 0 || accuracyCandidate > 1_000_000) return null
+    accuracyM = accuracyCandidate
+  }
+
+  if (source === 'PHONE_BROWSER' && accuracyM === null) return null
+
+  return {
+    targetSequence,
+    source,
+    latitude: latE6 / 1_000_000,
+    longitude: lonE6 / 1_000_000,
+    accuracyM,
+    capturedAtMs,
+    ageMs,
+  }
+}
